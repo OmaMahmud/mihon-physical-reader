@@ -53,6 +53,7 @@ class ReaderDeviceTest {
   compose.waitUntil(30000) {store.db.all().first{it.name==file.name}.pages==3}
   Thread.sleep(500)
   fun proof(name:String){
+   compose.waitForIdle();instrumentation.waitForIdleSync();Thread.sleep(150)
    val ui=instrumentation.uiAutomation
    ui.executeShellCommand("mkdir -p /sdcard/Download/real-reader-proof").let {android.os.ParcelFileDescriptor.AutoCloseInputStream(it).use{stream->stream.readBytes()}}
    val image=ui.takeScreenshot()
@@ -82,6 +83,7 @@ class ReaderDeviceTest {
   compose.onNodeWithText("Bookmarked").assertExists()
   compose.onNodeWithContentDescription("Home",useUnmergedTree=true).performClick()
   compose.onNodeWithText("Library",useUnmergedTree=true).performClick()
+  compose.onNodeWithText("Search series or filename").assertExists()
   proof("library")
   store.db.remove(store.db.all().first{it.name==file.name}.id);store.db.close();file.delete()
  }

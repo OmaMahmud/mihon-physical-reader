@@ -15,6 +15,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
+import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -61,7 +62,7 @@ private val symbols=FontFamily(Font(R.font.material_symbols))
 private fun symbolText(name: String): String = mapOf("home" to "\ue9b2","newsstand" to "\ue9c4","settings" to "\ue8b8","arrow_back" to "\ue5c4","add" to "\ue145","folder_open" to "\ue2c8","play_arrow" to "\ue037","chevron_right" to "\ue5cc","auto_stories" to "\ue666","bookmark" to "\ue8e7","tune" to "\ue429","chevron_left" to "\ue5cb","zoom_out_map" to "\ue56b","close" to "\ue5cd","skip_next" to "\ue044")[name] ?: ""
 class MainActivity: ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState);enableEdgeToEdge()
+        super.onCreate(savedInstanceState);enableEdgeToEdge(statusBarStyle=SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),navigationBarStyle=SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
         WorkManager.getInstance(this).enqueueUniquePeriodicWork("library-scan",ExistingPeriodicWorkPolicy.KEEP,PeriodicWorkRequestBuilder<ScanWorker>(6,TimeUnit.HOURS).build())
         setContent { RealReaderApp() }
     }
