@@ -356,10 +356,10 @@ class NativePhysicalReaderTest {
         waitForPaper(left = ltr, right = !ltr)
         capture("10-closed-$label")
         // A tap on the empty half must not reopen the comic or advance chapters.
-        device.click(device.displayWidth * (if (ltr) 3 else 1) / 4, device.displayHeight / 2)
+        tapBook(if (ltr) 0.75f else 0.25f)
         SystemClock.sleep(500)
         waitForPaper(left = ltr, right = !ltr)
-        device.click(device.displayWidth * (if (ltr) 1 else 3) / 4, device.displayHeight / 2)
+        tapBook(if (ltr) 0.25f else 0.75f)
         SystemClock.sleep(1000)
         waitForPaper(left = spread || !ltr, right = spread || ltr)
         waitFor(scenario) { it.viewModel.state.value.currentPage == start + 1 }
@@ -371,9 +371,28 @@ class NativePhysicalReaderTest {
         scenario.moveToState(Lifecycle.State.RESUMED)
         SystemClock.sleep(600)
         waitForPaper(left = ltr, right = !ltr)
-        device.click(device.displayWidth * (if (ltr) 1 else 3) / 4, device.displayHeight / 2)
+        tapBook(if (ltr) 0.25f else 0.75f)
         SystemClock.sleep(1000)
         waitForPaper(left = spread || !ltr, right = spread || ltr)
+    }
+
+    private fun tapBook(fraction: Float) {
+        instrumentation.waitForIdleSync()
+        val time = SystemClock.uptimeMillis()
+        // Queue both halves of a short tap before waiting; an overloaded emulator must not hold DOWN.
+        listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP).forEachIndexed { index, action ->
+            val event = MotionEvent.obtain(
+                time,
+                time + index,
+                action,
+                device.displayWidth * fraction,
+                device.displayHeight / 2f,
+                0,
+            )
+            assertTrue(instrumentation.uiAutomation.injectInputEvent(event, false))
+            event.recycle()
+        }
+        instrumentation.waitForIdleSync()
     }
 
     private fun waitForPaper(left: Boolean, right: Boolean) {
