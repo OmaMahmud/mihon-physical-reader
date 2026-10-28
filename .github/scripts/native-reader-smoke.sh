@@ -2,6 +2,7 @@
 set -u
 result=0
 adb logcat -G 16M || true
+adb shell settings put secure immersive_mode_confirmations confirmed
 ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=eu.kanade.tachiyomi.ui.reader.viewer.physical.NativePhysicalReaderTest --stacktrace || result=$?
 mkdir -p app/build/native-proof
 adb shell pm list packages | grep physical || true

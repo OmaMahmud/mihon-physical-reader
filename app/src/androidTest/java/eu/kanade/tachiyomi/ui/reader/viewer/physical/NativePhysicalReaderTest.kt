@@ -141,7 +141,7 @@ class NativePhysicalReaderTest {
         val root = File(context.getExternalFilesDir(null), "native-reader-test").apply { mkdirs() }
         val folder = File(root, "local/Native Curl Proof").apply { mkdirs() }
         makeChapter(File(folder, "001.cbz"))
-        makeChapter(File(folder, "002.cbz"))
+        makeChapter(File(folder, "002.cbz"), 2)
         graph.storagePreferences.baseStorageDirectory.set(root.toUri().toString())
         graph.basePreferences.shownOnboardingFlow.set(true)
         graph.readerPreferences.defaultReadingMode.set(ReadingMode.LEFT_TO_RIGHT.flagValue)
@@ -253,6 +253,10 @@ class NativePhysicalReaderTest {
             scenario.onActivity { activity -> activity.lifecycleScopeForTestLoadNext() }
             waitFor(scenario) { it.viewModel.state.value.currentChapter?.chapter?.id != first.id && it.viewModel.state.value.currentPage == 1 }
             capture("04-native-next-chapter")
+            swipe(false)
+            waitFor(scenario) { it.viewModel.state.value.currentPage == 2 }
+            swipe(true)
+            waitFor(scenario) { it.viewModel.state.value.currentPage == 1 }
         }
         ActivityScenario.launch<ReaderActivity>(intent).use { reopened ->
             waitFor(reopened) {
@@ -294,20 +298,22 @@ class NativePhysicalReaderTest {
         val down = SystemClock.uptimeMillis()
         val start = left + width * 0.87f
         val end = left + width * 0.16f
-        val y = top + height * 0.62f
-        fun input(action: Int, x: Float) {
+        val startY = top + height * 0.76f
+        val endY = top + height * 0.40f
+        fun input(action: Int, x: Float, y: Float) {
             val event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, x, y, 0)
             assertTrue(instrumentation.uiAutomation.injectInputEvent(event, true))
             event.recycle()
         }
-        input(MotionEvent.ACTION_DOWN, start)
+        input(MotionEvent.ACTION_DOWN, start, startY)
         repeat(16) { step ->
             SystemClock.sleep(24)
-            input(MotionEvent.ACTION_MOVE, start + (end - start) * (step + 1) / 16)
+            val fraction = (step + 1) / 16f
+            input(MotionEvent.ACTION_MOVE, start + (end - start) * fraction, startY + (endY - startY) * fraction)
         }
         SystemClock.sleep(300)
         capture("02-native-held-page-curl")
-        input(MotionEvent.ACTION_UP, end)
+        input(MotionEvent.ACTION_UP, end, endY)
     }
 
     private fun swipe(forward: Boolean) {
@@ -373,9 +379,9 @@ class NativePhysicalReaderTest {
         return result.get()
     }
 
-    private fun makeChapter(file: File) {
+    private fun makeChapter(file: File, count: Int = 9) {
         ZipOutputStream(file.outputStream()).use { zip ->
-            repeat(9) { index ->
+            repeat(count) { index ->
                 if (index < 3) {
                     zip.putNextEntry(ZipEntry("${index.toString().padStart(3, '0')}.jpg"))
                     instrumentation.context.assets.open("real_comic/page${index + 1}.jpg").use { it.copyTo(zip) }

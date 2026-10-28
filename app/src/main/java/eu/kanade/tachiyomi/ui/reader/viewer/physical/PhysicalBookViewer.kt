@@ -415,6 +415,7 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
             if (event.pointerCount > 1) scaling = true
             val x = event.x / width.toDouble()
             val y = event.y / height.toDouble()
+            val eventTime = event.eventTime
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     scaling = false
@@ -422,11 +423,11 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
                     downX = event.x
                     downY = event.y
                     parent?.requestDisallowInterceptTouchEvent(true)
-                    command { down(x, y) }
+                    command { down(x, y, eventTime) }
                 }
                 MotionEvent.ACTION_MOVE -> if (!scaling) {
                     if (hypot(event.x - downX, event.y - downY) > slop) activity.hideMenu()
-                    command { move(x, y) }
+                    command { move(x, y, eventTime) }
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     val tapped = hypot(event.x - downX, event.y - downY) <= slop || scaling || longPressed

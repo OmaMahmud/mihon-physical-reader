@@ -303,13 +303,14 @@ class ReaderViewModel(
             .distinctUntilChanged()
             .filterNotNull()
             .onEach { currentChapter ->
-                if (chapterPageIndex >= 0) {
-                    // Restore from SavedState
+                if (chapterPageIndex >= 0 && chapterId == currentChapter.chapter.id) {
+                    // Saved state belongs only to the chapter it was recorded for.
                     currentChapter.requestedPage = chapterPageIndex
                 } else if (!currentChapter.chapter.read) {
                     currentChapter.requestedPage = currentChapter.chapter.lastPageRead
                 }
                 chapterId = currentChapter.chapter.id
+                chapterPageIndex = currentChapter.requestedPage
             }
             .launchIn(viewModelScope)
 

@@ -301,7 +301,7 @@ internal class PhysicalBookRenderer(
     private fun currentSource(): Int = faces.getOrNull(max(0, index))?.source?.takeIf { it >= 0 } ?: source
     private fun canTurn(dir: Int): Boolean = if (book) {
         if (dir == 1) {
-            if (index == -1) faces.size > 2 else index < faces.lastIndex
+            if (index == -1) faces.size > 1 else index < faces.lastIndex
         } else {
             index != -1
         }
@@ -375,7 +375,7 @@ internal class PhysicalBookRenderer(
         animate(1.0)
     }
 
-    fun down(rawX: Double, y: Double) {
+    fun down(rawX: Double, y: Double, eventTime: Long) {
         if (animationDuration > 0) return
         val x = if (reversed) 1 - rawX else rawX
         pointerX = rawX.toFloat()
@@ -384,7 +384,7 @@ internal class PhysicalBookRenderer(
         panStartY = panY
         startX = x
         lastX = x
-        lastTime = SystemClock.uptimeMillis()
+        lastTime = eventTime
         velocity = 0.0
         direction = if (x < 0.5) -1 else 1
         boundaryDrag = false
@@ -402,7 +402,7 @@ internal class PhysicalBookRenderer(
         progress = 0.0
     }
 
-    fun move(rawX: Double, y: Double) {
+    fun move(rawX: Double, y: Double, eventTime: Long) {
         if (zoom > 1.001) {
             panX = panStartX - (rawX.toFloat() - pointerX) * viewSw / zoom
             panY = panStartY + (y.toFloat() - pointerY) * viewSh / zoom
@@ -411,7 +411,7 @@ internal class PhysicalBookRenderer(
         }
         if (!drag) return
         val x = if (reversed) 1 - rawX else rawX
-        val now = SystemClock.uptimeMillis()
+        val now = eventTime
         val elapsed = max(1L, now - lastTime)
         velocity = 0.65 * velocity + 0.35 * ((x - lastX) / elapsed * 1000)
         lastX = x
