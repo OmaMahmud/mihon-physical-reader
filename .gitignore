@@ -1,17 +1,6 @@
-# Build files
-.gradle
-.kotlin
-build
-
-# IDE files
-*.iml
-.idea/*
-!.idea/icon.svg
-/captures
-
-# Configuration files
-keystore.properties
+.gradle/
+**/build/
 local.properties
-
-# macOS specific files
-.DS_Store
+*.jks
+*.keystore
+.idea/
