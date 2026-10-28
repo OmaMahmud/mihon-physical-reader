@@ -80,7 +80,7 @@ class PhysicalBookView(
             // Serialize requests: the HTTP loader prioritizes one rolling window at a time.
             val job = scope.launch { chapter.pageLoader?.loadPage(page) }
             try {
-                runBlocking {
+                runBlocking(scope.coroutineContext) {
                     withTimeout(90_000) {
                         page.statusFlow.first { it == Page.State.Ready || it is Page.State.Error }
                     }
