@@ -2,7 +2,6 @@ package eu.kanade.tachiyomi.ui.reader.viewer.physical
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.opengl.GLES20.GL_BLEND
 import android.opengl.GLES20.GL_CLAMP_TO_EDGE
 import android.opengl.GLES20.GL_COLOR_BUFFER_BIT
@@ -69,6 +68,7 @@ import android.opengl.GLES20.glVertexAttribPointer
 import android.opengl.GLES20.glViewport
 import android.opengl.GLSurfaceView
 import android.opengl.GLUtils
+import ca.mpreg.imagedecoder.ImageDecoder
 import android.os.SystemClock
 import android.util.Log
 import java.nio.ByteBuffer
@@ -157,7 +157,7 @@ internal class PhysicalBookRenderer(
         textures.clear()
         val limit = IntArray(1)
         glGetIntegerv(GL_MAX_TEXTURE_SIZE, limit, 0)
-        maxPageDimension = min(4096, limit[0].coerceAtLeast(2048))
+        maxPageDimension = if (limit[0] > 0) min(4096, limit[0]) else 2048
         uniforms.clear()
         fun shader(type: Int, path: String): Int {
             val id = glCreateShader(type)
@@ -182,7 +182,9 @@ internal class PhysicalBookRenderer(
         glUseProgram(program)
         glUniform1i(u("uTex"), 0)
         glUniform1i(u("uPaperGrain"), 1)
-        val paper = context.assets.open("physical_v40_grain.png").use { BitmapFactory.decodeStream(it) }
+        val paper = context.assets.open("physical_v40_grain.png").use { input ->
+            ImageDecoder.open(input).use { it.decodeToBitmap(null, 1) }
+        }
         grain = upload(checkNotNull(paper), true)
         paper.recycle()
         val blank = Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888)

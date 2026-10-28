@@ -22,6 +22,28 @@ jobs:
       - name: Previous Android process diagnostics
         run: |
           find prior -name logcat.txt -exec grep -E -A20 -B4 'Fatal signal|FATAL|SIGSEGV|crash_dump|OutOfMemory|GLThread|ExceptionHandler|lowmemory|lmkd| 3989 ' {} \; | tail -n 450
+  signing-diagnostics:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: mihon-physical-reader-test-apk
+          run-id: 40633255278
+          github-token: ${{ github.token }}
+          path: old
+      - uses: actions/download-artifact@v4
+        with:
+          name: mihon-native-v40-apk
+          run-id: 40682330914
+          github-token: ${{ github.token }}
+          path: candidate
+      - name: Check APK update identity
+        run: |
+          signer=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -n1)
+          echo PREVIOUS_APK_CERTIFICATE
+          "$signer" verify --print-certs "$(find old -name '*universal*.apk' | head -n1)" | grep 'certificate SHA-256 digest'
+          echo NATIVE_APK_CERTIFICATE
+          "$signer" verify --print-certs "$(find candidate -name '*.apk' | head -n1)" | grep 'certificate SHA-256 digest'
   native:
     runs-on: ubuntu-24.04
     timeout-minutes: 40

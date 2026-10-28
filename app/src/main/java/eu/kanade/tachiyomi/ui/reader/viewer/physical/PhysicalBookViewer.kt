@@ -1,7 +1,6 @@
 package eu.kanade.tachiyomi.ui.reader.viewer.physical
 
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.opengl.GLSurfaceView
 import android.view.GestureDetector
 import android.view.MotionEvent
@@ -22,6 +21,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import ca.mpreg.imagedecoder.ImageDecoder
+import java.io.ByteArrayInputStream
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
@@ -152,10 +153,9 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
                         val input = if (page.status == Page.State.Ready) page.stream?.invoke() else null
                         val cached = input ?: page.imageUrl?.let { activity.appGraph.chapterCache.openImage(it) }
                         cached?.use {
-                            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                            BitmapFactory.decodeStream(it, null, bounds)
-                            if (bounds.outWidth > 0 && bounds.outHeight > 0) {
-                                result[page.index] = bounds.outWidth to bounds.outHeight
+                            val encoded = it.readBytes()
+                            ImageDecoder.open(ByteArrayInputStream(encoded)).use { decoder ->
+                                result[page.index] = decoder.width to decoder.height
                             }
                         }
                     } catch (e: CancellationException) {
@@ -205,18 +205,20 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
                                         }
                                         if (state is Page.State.Error) throw state.error
                                         val stream = checkNotNull(page.stream)
-                                        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                                        stream().use { BitmapFactory.decodeStream(it, null, bounds) }
-                                        check(bounds.outWidth > 0 && bounds.outHeight > 0) { "Unsupported image" }
-                                        val options = BitmapFactory.Options().apply {
-                                            inPreferredConfig = Bitmap.Config.ARGB_8888
-                                            val edge = max(bounds.outWidth, bounds.outHeight)
+                                        val encoded = stream().use { it.readBytes() }
+                                        ImageDecoder.open(ByteArrayInputStream(encoded)).use { decoder ->
+                                            val edge = max(decoder.width, decoder.height)
                                             var sample = 1
                                             while ((edge + sample - 1) / sample > decodeLimit) sample *= 2
-                                            inSampleSize = sample
+                                            val decodedBitmap = decoder.decodeToBitmap(null, sample)
+                                            val bitmap = if (decodedBitmap.config == Bitmap.Config.ARGB_8888) {
+                                                decodedBitmap
+                                            } else {
+                                                checkNotNull(decodedBitmap.copy(Bitmap.Config.ARGB_8888, false))
+                                                    .also { decodedBitmap.recycle() }
+                                            }
+                                            Triple(bitmap, decoder.width, decoder.height)
                                         }
-                                        val bitmap = stream().use { BitmapFactory.decodeStream(it, null, options) }
-                                        Triple(checkNotNull(bitmap), bounds.outWidth, bounds.outHeight)
                                     } finally {
                                         load.cancel()
                                     }
