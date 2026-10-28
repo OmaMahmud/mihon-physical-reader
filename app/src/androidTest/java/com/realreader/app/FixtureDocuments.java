@@ -33,7 +33,7 @@ public class FixtureDocuments extends DocumentsProvider {
         Uri tree=DocumentsContract.buildTreeDocumentUri("com.realreader.fixture.documents","root");
         getContext().grantUriPermission("com.realreader.app",tree,Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_PREFIX_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
     }
-    @Override public boolean isChildDocument(String parent,String child) throws FileNotFoundException {try{return file(child).getCanonicalPath().startsWith(file(parent).getCanonicalPath()+"/");}catch(IOException e){return false;}}
+    @Override public boolean isChildDocument(String parent,String child) {try{return file(child).getCanonicalPath().startsWith(file(parent).getCanonicalPath()+"/");}catch(IOException e){return false;}}
     @Override public Cursor queryRoots(String[] projection){MatrixCursor c=new MatrixCursor(new String[]{Root.COLUMN_ROOT_ID,Root.COLUMN_DOCUMENT_ID,Root.COLUMN_TITLE,Root.COLUMN_FLAGS});c.addRow(new Object[]{"root","root","Comic fixture",Root.FLAG_LOCAL_ONLY});return c;}
     private MatrixCursor cursor(){return new MatrixCursor(new String[]{Document.COLUMN_DOCUMENT_ID,Document.COLUMN_DISPLAY_NAME,Document.COLUMN_MIME_TYPE,Document.COLUMN_FLAGS,Document.COLUMN_SIZE});}
     private void add(MatrixCursor c,File f){String rel=root().toURI().relativize(f.toURI()).getPath();String id=rel.isEmpty()?"root":"root/"+rel.replaceAll("/$","");c.addRow(new Object[]{id,f.getName(),f.isDirectory()?Document.MIME_TYPE_DIR:"application/octet-stream",0,f.length()});}
