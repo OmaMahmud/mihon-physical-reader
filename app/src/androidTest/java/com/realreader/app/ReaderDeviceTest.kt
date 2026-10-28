@@ -78,12 +78,12 @@ class ReaderDeviceTest {
   store.db.remove(store.db.all().first{it.name==file.name}.id);store.db.close();file.delete()
  }
  @Test fun nestedSafScanIsIdempotentAndPreservesOriginals() {
-  val instrumentation=InstrumentationRegistry.getInstrumentation();val testContext=instrumentation.context;val context=instrumentation.targetContext
-  val root=File(testContext.filesDir,"saf-fixture");val nested=File(root,"nested").apply{mkdirs()};val file=File(nested,"Test #1.cbz").apply{writeText("fixture for index only")};File(nested,"unrelated.txt").writeText("ignored")
+  val instrumentation=InstrumentationRegistry.getInstrumentation();val context=instrumentation.targetContext
+  instrumentation.uiAutomation.adoptShellPermissionIdentity("android.permission.MANAGE_DOCUMENTS")
   val tree=android.provider.DocumentsContract.buildTreeDocumentUri("com.realreader.fixture.documents","root")
   val store=LibraryStore(context);val oldFolders=store.folders();store.prefs.edit().putStringSet("folders",setOf(tree.toString())).commit()
-  try {store.scan();store.scan();val found=store.db.all().filter{it.name==file.name};assertEquals(1,found.size);assertTrue(file.exists());assertTrue(found.first().uri.startsWith("content://"));assertEquals("Test",found.first().series);store.db.remove(found.first().id)}
-  finally {store.prefs.edit().putStringSet("folders",oldFolders).commit();store.db.close();root.deleteRecursively()}
+  try {store.scan();store.scan();val found=store.db.all().filter{it.name=="Test #1.cbz"};assertEquals(1,found.size);assertTrue(androidx.documentfile.provider.DocumentFile.fromSingleUri(context,Uri.parse(found.first().uri))!!.exists());assertTrue(found.first().uri.startsWith("content://"));assertEquals("Test",found.first().series);store.db.remove(found.first().id)}
+  finally {store.prefs.edit().putStringSet("folders",oldFolders).commit();store.db.close();instrumentation.uiAutomation.dropShellPermissionIdentity()}
  }
  @Test fun pdfUsesNativeRenderer() {
   val context=ApplicationProvider.getApplicationContext<Context>();val file=File(context.cacheDir,"Fixture.pdf")
