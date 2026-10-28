@@ -555,11 +555,36 @@ class ReaderActivity : BaseActivity() {
         val verticalNavigatorOnLeft by readerPreferences.verticalNavigatorOnLeft.collectAsState()
         val verticalNavigatorHeight by readerPreferences.verticalNavigatorHeight.collectAsState()
 
-        // Experimental preview only: opens the bundled sample book.
-        androidx.compose.material3.TextButton(
-            onClick = { startActivity(Intent(this, PhysicalBookDemoActivity::class.java)) },
-        ) {
-            Text("Physical book demo")
+        // The physical renderer is currently a preview, not a chapter viewer.
+        // Preserve the fully functional Mihon viewer until real pages are wired in.
+        var showReaderOptions by remember { mutableStateOf(false) }
+        TextButton(onClick = { showReaderOptions = true }) {
+            Text("Reader options")
+        }
+        if (showReaderOptions) {
+            AlertDialog(
+                onDismissRequest = { showReaderOptions = false },
+                title = { Text("Reading experience") },
+                text = {
+                    Text(
+                        "Classic Mihon reads the current chapter. Physical Book v4.0 " +
+                            "is a preview with sample pages until chapter integration is complete.",
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showReaderOptions = false
+                            startActivity(Intent(this, PhysicalBookDemoActivity::class.java))
+                        },
+                    ) { Text("Preview Physical Book") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showReaderOptions = false }) {
+                        Text("Continue Classic")
+                    }
+                },
+            )
         }
         ReaderAppBars(
             visible = state.menuVisible,
