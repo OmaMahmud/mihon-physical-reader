@@ -335,6 +335,14 @@ class NativePhysicalReaderTest {
         }
         waitFor(scenario) { it.viewModel.getMangaReadingMode() == mode.flagValue }
         SystemClock.sleep(1000)
+        scenario.onActivity { it.viewModel.setMangaOrientationType(ReaderOrientation.LOCKED_LANDSCAPE) }
+        waitFor(scenario) { it.resources.configuration.screenWidthDp > it.resources.configuration.screenHeightDp }
+        SystemClock.sleep(1000)
+        // Changing direction displays Mihon's navigation guide. Dismiss it before sampling paper.
+        device.click(device.displayWidth / 2, device.displayHeight / 2)
+        SystemClock.sleep(400)
+        scenario.onActivity { it.hideMenu() }
+        SystemClock.sleep(1100)
         scenario.onActivity { it.moveToPageIndex(start) }
         waitFor(scenario) { it.viewModel.state.value.currentPage == start + 1 }
         SystemClock.sleep(600)
