@@ -1,23 +1,18 @@
-# Mihon Physical Reader — first APK test
+# Physical book reader
 
-This is a complete Mihon 0.21.3 source snapshot with a **demo** physical-book activity and a GitHub Actions debug APK build workflow. The demo contains 12 synthetic placeholder pages, not copyrighted comic content.
+Open a chapter. The **Physical book** switch stays above the reader:
+- **On** uses the bundled WebGL book renderer with the current chapter's images.
+- **Off (Classic)** returns to Mihon's original viewer at the current reading position.
+- The choice persists between launches. Physical book is enabled by default.
+- Tap the center of the physical page or use **Menu** for Mihon's chapter controls.
+- The physical toolbar also provides previous/next chapter controls.
 
-**Not yet connected to Mihon chapter images, page progress, or reading preferences.** The demo is launched from a `Physical book demo` button in the reader UI. This is an engineering test, not a finished reader. No APK has yet been built or tested.
+The adapter reuses Mihon's page loader, including extension requests, cached pages and downloaded/local page streams. Page turns update Mihon's progress and history. The bundled renderer supplies page curl, portrait/book layout, wide scans, pinch zoom, pan, and fit controls. Its source asset is retained without replacing it with a different renderer.
 
-## Upload to your private GitHub repository
+The APK version is 0.21.3-physical-book (version code 40), under the existing fork application ID. The debug artifact contains a single universal APK.
 
-GitHub's website **does not automatically extract ZIP uploads**. On a PC, extract this ZIP, then use GitHub Desktop or Git to commit/push its *contents* (not the ZIP) to your repository. Because the repository already has a README commit, GitHub Desktop may require cloning the repository first and copying the extracted files into the clone. No application code needs to be written.
+## Validation and limits
 
-## Get the APK
+Android build, format checks, unit tests, and migration checks run in GitHub Actions. The JavaScript adapter is also checked for resume mapping, wide-page positions, progress reporting, seeks, and load failures. Device testing is still required; CI does not verify touch behavior or graphics on a phone.
 
-After the files are committed on `main`, open your repository > Actions > Build Physical Reader Test APK > latest successful run > Artifacts > `mihon-physical-reader-test-apk`. Extract the downloaded artifact ZIP to find the APK.
-
-The debug APK uses a different application ID (`app.mihon.physicaldemo`) so it can install alongside standard Mihon. GitHub Actions build success is not guaranteed until dependencies are fetched and compilation is checked.
-
-## Integration checklist
-
-- [ ] Replace synthetic pages with real ReaderPage streams from the active chapter.
-- [ ] Connect page turns to Mihon's reading progress and chapter navigation.
-- [ ] Offer Physical Book and Classic Mihon as selectable modes; preserve Classic as fallback.
-- [ ] Test extension repository browsing, chapter download, and offline reading.
-- [ ] Verify a real chapter in the APK before calling Phase 1 or Phase 2 complete.
+This first connection loads and decodes the whole chapter before displaying it. Large chapters can take time and use substantial memory. A failed image shows a Reload control instead of silently skipping the page. Classic remains available through the persistent switch. Physical mode follows the bundled renderer's page order; Mihon's RTL and all viewer-specific settings are not yet mapped to it. The bundled HTML identifies its original source as v3.9; a separate v4.0 source has not been supplied in this chat.
