@@ -223,10 +223,8 @@ class NativePhysicalReaderTest {
             waitFor(scenario) { !it.viewModel.state.value.menuVisible }
             holdCurlAndCapture(scenario)
             waitFor(scenario) { it.viewModel.state.value.currentPage == 2 }
-            swipe(false)
-            waitFor(scenario) { it.viewModel.state.value.currentPage == 1 }
-            swipe(true)
-            waitFor(scenario) { it.viewModel.state.value.currentPage == 2 }
+            turnTo(scenario, false, 2, 1)
+            turnTo(scenario, true, 1, 2)
             repeat(5) {
                 device.swipe(
                     device.displayWidth * 9 / 10,
@@ -247,25 +245,12 @@ class NativePhysicalReaderTest {
             waitFor(scenario) { it.viewModel.state.value.currentPage == 4 }
             SystemClock.sleep(600)
             capture("05-native-double-page-spread")
-            swipe(false)
-            waitFor(scenario) { it.viewModel.state.value.currentPage < 4 }
-            swipe(true)
-            waitFor(scenario) { it.viewModel.state.value.currentPage == 4 }
+            turnTo(scenario, false, 4, 2)
+            turnTo(scenario, true, 2, 4)
             scenario.onActivity { it.viewModel.setMangaReadingMode(ReadingMode.RIGHT_TO_LEFT) }
             waitFor(scenario) { it.viewModel.getMangaReadingMode() == ReadingMode.RIGHT_TO_LEFT.flagValue }
             SystemClock.sleep(1000)
-            // Changing direction rebuilds the texture cache. A swipe during upload may be ignored.
-            // Retry only an unchanged source page; moving backward must fail the RTL assertion.
-            repeat(3) {
-                var current = 0
-                scenario.onActivity { current = it.viewModel.state.value.currentPage }
-                assertTrue("RTL forward must never move backward", current >= 4)
-                if (current == 4) {
-                    swipe(false)
-                    SystemClock.sleep(700)
-                }
-            }
-            waitFor(scenario) { it.viewModel.state.value.currentPage > 4 }
+            turnTo(scenario, false, 4, 5)
             capture("06-native-right-to-left")
             assertFalse("No webpage after rotation", containsWebViewOnUi(scenario))
             scenario.onActivity { it.viewModel.saveHistory() }
@@ -281,10 +266,8 @@ class NativePhysicalReaderTest {
                     it.viewModel.state.value.currentPage == 1
             }
             capture("04-native-next-chapter")
-            swipe(false)
-            waitFor(scenario) { it.viewModel.state.value.currentPage == 2 }
-            swipe(true)
-            waitFor(scenario) { it.viewModel.state.value.currentPage == 1 }
+            turnTo(scenario, false, 1, 2)
+            turnTo(scenario, true, 2, 1)
             verifyClosedBook(scenario, ReadingMode.LEFT_TO_RIGHT, 0, 1, false, "short-ltr")
             verifyClosedBook(scenario, ReadingMode.RIGHT_TO_LEFT, 0, 1, false, "short-rtl")
             scenario.onActivity { it.lifecycleScopeForTestLoadNext() }
@@ -472,6 +455,25 @@ class NativePhysicalReaderTest {
         SystemClock.sleep(300)
         capture("02-native-held-page-curl")
         input(MotionEvent.ACTION_UP, end, endY)
+    }
+
+    private fun turnTo(scenario: ActivityScenario<ReaderActivity>, forward: Boolean, from: Int, target: Int) {
+        fun currentPage(): Int {
+            var page = 0
+            scenario.onActivity { page = it.viewModel.state.value.currentPage }
+            return page
+        }
+        // A new chapter or direction can still be preparing textures after its model is updated.
+        // Retry only an ignored gesture; a wrong destination or direction fails immediately.
+        repeat(4) {
+            val current = currentPage()
+            if (current == target) return
+            assertEquals("Gesture must stay on its source page or reach its exact target", from, current)
+            swipe(forward)
+            val deadline = SystemClock.uptimeMillis() + 1500
+            while (currentPage() == from && SystemClock.uptimeMillis() < deadline) SystemClock.sleep(100)
+        }
+        assertEquals("Gesture must reach its exact target after texture preparation", target, currentPage())
     }
 
     private fun swipe(forward: Boolean) {
