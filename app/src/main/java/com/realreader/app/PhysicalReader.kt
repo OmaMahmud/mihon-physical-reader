@@ -20,6 +20,7 @@ import kotlin.math.*
 class PhysicalReader(context: Context): GLSurfaceView(context) {
     var onTurn: (Int)->Unit = {}; var onControls: ()->Unit = {}
     var rtl=false
+        set(value) {field=value;paper.rtl=value;requestRender()}
     var bookMode=false
         set(value) {field=value;paper.book=value;requestRender()}
     var ready=false
@@ -105,6 +106,7 @@ private class PaperRenderer: GLSurfaceView.Renderer {
     @Volatile var backward=false;@Volatile var target=1
     @Volatile var zoom=1f;@Volatile var panX=0f;@Volatile var panY=0f
     @Volatile var fitX=1f;@Volatile var fitY=1f
+    @Volatile var rtl=false
     @Volatile var book=false
     private var program=0;private var screenRatio=1f;private var ratio=1f
     private val textures=IntArray(3);private var hasNext=false;private var hasPrev=false
@@ -143,12 +145,12 @@ private class PaperRenderer: GLSurfaceView.Renderer {
         glUniform4f(glGetUniformLocation(program,"uRect"),x,y,0f,0f);glUniform3f(glGetUniformLocation(program,"uZoom"),zoom,panX,panY)
         val valid=if(target>0)hasNext else hasPrev
         val solo=book && ratio<1.25f
-        if(progress<=0 || !valid) {draw(flat(),0,leafBase=if(solo).5f else 0f,leafScale=if(solo).5f else 1f);return}
+        if(progress<=0 || !valid) {draw(flat(),0,leafBase=if(solo && !rtl).5f else 0f,leafScale=if(solo).5f else 1f);return}
         val incoming=if(target>0)1 else 2
         val mirror=if(backward)1f else 0f
         if(book) {
             val incomingSolo=source[incoming]!!.width.toFloat()/source[incoming]!!.height<1.25f
-            draw(flat(-.02f),incoming,leafBase=if(incomingSolo).5f else 0f,leafScale=if(incomingSolo).5f else 1f)
+            draw(flat(-.02f),incoming,leafBase=if(incomingSolo && !rtl).5f else 0f,leafScale=if(incomingSolo).5f else 1f)
             // Keep the opposite leaf stationary. Only the outside leaf rotates about the spine.
             if(!solo)draw(flat(-.005f),0,leafBase=if(backward).5f else 0f,leafScale=.5f,uvBase=if(backward).5f else 0f,uvScale=.5f)
             val leafBase=if(backward)0f else .5f

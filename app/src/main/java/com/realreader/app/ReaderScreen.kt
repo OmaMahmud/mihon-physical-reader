@@ -55,7 +55,7 @@ import kotlin.math.min
     DisposableEffect(view,lifecycle) {
         val observer=LifecycleEventObserver{_,event ->when(event){Lifecycle.Event.ON_RESUME->view.onResume();Lifecycle.Event.ON_PAUSE->{view.onPause();if(latestCount>0)store.db.position(comic.id,latestPage,latestCount)};else->Unit}}
         lifecycle.lifecycle.addObserver(observer)
-        onDispose {lifecycle.lifecycle.removeObserver(observer);view.dispose();activity.requestedOrientation=ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;activity.window.attributes=activity.window.attributes.apply {screenBrightness=-1f};if(latestCount>0)store.db.position(comic.id,latestPage,latestCount)}
+        onDispose {lifecycle.lifecycle.removeObserver(observer);view.dispose();if(!activity.isChangingConfigurations){activity.requestedOrientation=ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;activity.window.attributes=activity.window.attributes.apply {screenBrightness=-1f}};if(latestCount>0)store.db.position(comic.id,latestPage,latestCount)}
     }
     LaunchedEffect(comic.id) {
         try {document=withContext(Dispatchers.IO){ComicDocument(context,comic)};count=document!!.count;page=page.coerceIn(0,count-1)} catch(e:Exception){error=e.message ?: "Unable to open comic";loading=false}
@@ -96,6 +96,7 @@ import kotlin.math.min
         } catch(e:Exception){error=e.message ?: "Page decoding failed";view.ready=false}
         loading=false
     }
+    LaunchedEffect(brightness) {activity.window.attributes=activity.window.attributes.apply {screenBrightness=brightness}}
     BackHandler {if(settings)settings=false else if(!controls)controls=true else onBack()}
     Box(Modifier.fillMaxSize().background(Color(0xFF05070B))) {
         AndroidView(factory={view},modifier=Modifier.fillMaxSize())
