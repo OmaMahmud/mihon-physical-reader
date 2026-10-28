@@ -494,6 +494,12 @@ internal class PhysicalBookRenderer(
             return
         }
         drag = false
+        if (book && tapped && progress == 0.0) {
+            // A stationary tap has no curl to roll back. Keep it available for the confirmed tap.
+            spreadTurn = false
+            nextFrame()
+            return
+        }
         if (tapped || cancel) {
             animate(0.0)
             return
