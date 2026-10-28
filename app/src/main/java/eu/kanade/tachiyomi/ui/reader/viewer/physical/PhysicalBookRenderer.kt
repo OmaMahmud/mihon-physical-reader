@@ -208,8 +208,9 @@ internal class PhysicalBookRenderer(
         this.width = max(1, width)
         this.height = max(1, height)
         val old = currentSource()
+        val wasClosedEnd = book && index >= 0 && index == faces.lastIndex
         book = width > height
-        rebuild(old)
+        rebuild(old, wasClosedEnd)
         progress = 0.0
         drag = false
         animationDuration = 0.0
@@ -232,7 +233,7 @@ internal class PhysicalBookRenderer(
         panX = 0f
         panY = 0f
         pendingSeek = null
-        rebuild(source)
+        rebuild(source, false)
     }
 
     fun putPage(source: Int, bitmap: Bitmap, originalWidth: Int, originalHeight: Int) {
@@ -272,8 +273,10 @@ internal class PhysicalBookRenderer(
         return ids[0]
     }
 
-    private fun rebuild(keep: Int) {
-        val wasClosedEnd = book && index >= 0 && index == faces.lastIndex
+    private fun rebuild(
+        keep: Int,
+        preserveClosedEnd: Boolean = book && index >= 0 && index == faces.lastIndex,
+    ) {
         val result = ArrayList<Face>()
         for (n in 0 until count) {
             val (w, h) = dimensions[n] ?: (1000 to 1360)
@@ -290,7 +293,7 @@ internal class PhysicalBookRenderer(
         index = if (book) {
             if (keep == 0) {
                 -1
-            } else if (wasClosedEnd && face == faces.lastIndex) {
+            } else if (preserveClosedEnd && faces.lastOrNull()?.source == keep) {
                 faces.lastIndex
             } else if (face % 2 == 1) {
                 face
@@ -343,7 +346,7 @@ internal class PhysicalBookRenderer(
         progress = 0.0
         drag = false
         source = next
-        rebuild(next)
+        rebuild(next, false)
         pan = 0.0
         zoom = 1f
         panX = 0f
