@@ -70,26 +70,30 @@ jobs:
         id: signing_identity
         if: always()
         run: |
+          set -o pipefail
           signer=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -n1)
           expected=$(keytool -exportcert -alias androiddebugkey -keystore "$RUNNER_TEMP/native-reader.keystore" -storepass android | sha256sum | cut -d' ' -f1)
           echo "Retained signing certificate SHA256=$expected"
           for apk in app/build/outputs/apk/debug/*.apk; do
-            actual=$("$signer" verify --print-certs "$apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | tr '[:upper:]' '[:lower:]')
+            "$signer" verify --print-certs "$apk" | tee apk-certificates.txt
+            actual=$(sed -n 's/.*certificate SHA-256 digest: //p' apk-certificates.txt | head -n1 | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
             echo "APK $(basename "$apk") certificate SHA256=$actual"
             test "$actual" = "$expected"
           done
-      - name: Preserve verified signing key for private recovery
-        if: always() && steps.signing_identity.outcome == 'success'
+      - name: Preserve signing key for private recovery
+        if: always()
         run: |
+          if [ ! -f "$RUNNER_TEMP/native-reader.keystore" ]; then exit 0; fi
           openssl cms -encrypt -binary -aes256 -in "$RUNNER_TEMP/native-reader.keystore" -outform DER -out native-signing-key.encrypted .github/native-recovery-public.pem
           echo NATIVE_SIGNING_RECOVERY_BEGIN
           base64 -w76 native-signing-key.encrypted
           echo NATIVE_SIGNING_RECOVERY_END
       - uses: actions/upload-artifact@v4
-        if: always() && steps.signing_identity.outcome == 'success'
+        if: always()
         with:
           name: encrypted-native-signing-key
           path: native-signing-key.encrypted
+          if-no-files-found: warn
       - name: Record visual proof
         if: always()
         run: |
