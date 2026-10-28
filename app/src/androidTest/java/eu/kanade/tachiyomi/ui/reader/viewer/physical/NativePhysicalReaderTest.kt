@@ -1,7 +1,6 @@
 package eu.kanade.tachiyomi.ui.reader.viewer.physical
 
 import android.content.Context
-import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
@@ -240,7 +239,7 @@ class NativePhysicalReaderTest {
             }
             SystemClock.sleep(900)
             waitFor(scenario) { it.viewModel.state.value.currentPage > 2 }
-            scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE }
+            scenario.onActivity { it.viewModel.setMangaOrientationType(ReaderOrientation.LOCKED_LANDSCAPE) }
             waitFor(scenario) { it.resources.configuration.screenWidthDp > it.resources.configuration.screenHeightDp }
             SystemClock.sleep(1000)
             capture("03-native-book-layout")
@@ -290,7 +289,7 @@ class NativePhysicalReaderTest {
             }
             SystemClock.sleep(500)
             capture("08-native-reopened-progress")
-            reopened.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE }
+            reopened.onActivity { it.viewModel.setMangaOrientationType(ReaderOrientation.LOCKED_LANDSCAPE) }
             waitFor(reopened) { it.resources.configuration.screenWidthDp > it.resources.configuration.screenHeightDp }
             SystemClock.sleep(600)
             verifyClosedBook(reopened, ReadingMode.LEFT_TO_RIGHT, 7, 7, true, "wide-ltr")
