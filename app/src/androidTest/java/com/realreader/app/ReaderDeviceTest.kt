@@ -18,6 +18,59 @@ import java.util.zip.ZipOutputStream
 @RunWith(AndroidJUnit4::class)
 class ReaderDeviceTest {
  @get:Rule val compose=createAndroidComposeRule<MainActivity>()
+ @Test fun completedTurnHoldsDestinationUntilTexturesArrive() {
+  val instrumentation=InstrumentationRegistry.getInstrumentation()
+  val context=instrumentation.targetContext
+  lateinit var reader: PhysicalReader
+  val turned=java.util.concurrent.CountDownLatch(1)
+  fun image(color:Int)=Bitmap.createBitmap(80,120,Bitmap.Config.ARGB_8888).apply {eraseColor(color)}
+  instrumentation.runOnMainSync {
+   reader=PhysicalReader(context)
+   compose.activity.setContentView(reader)
+   reader.onTurn={turned.countDown()}
+   reader.frames(image(Color.RED),image(Color.BLUE),null)
+  }
+  val deadline=android.os.SystemClock.uptimeMillis()+10000
+  while(!reader.ready && android.os.SystemClock.uptimeMillis()<deadline)Thread.sleep(20)
+  assertTrue(reader.ready)
+  instrumentation.runOnMainSync {reader.turn(1)}
+  assertTrue(turned.await(10,java.util.concurrent.TimeUnit.SECONDS))
+  Thread.sleep(200) // Deliberately withhold new frames to reproduce the decode/upload gap.
+  fun centerColor():Int {
+   val output=Bitmap.createBitmap(reader.width,reader.height,Bitmap.Config.ARGB_8888)
+   val copied=java.util.concurrent.CountDownLatch(1);var status=-1
+   android.view.PixelCopy.request(reader,output,{status=it;copied.countDown()},android.os.Handler(android.os.Looper.getMainLooper()))
+   assertTrue(copied.await(5,java.util.concurrent.TimeUnit.SECONDS))
+   assertEquals(android.view.PixelCopy.SUCCESS,status)
+   return output.getPixel(output.width/2,output.height/2).also {output.recycle()}
+  }
+  assertEquals("Destination must remain visible while decoding",Color.BLUE,centerColor())
+  instrumentation.runOnMainSync {reader.frames(image(Color.BLUE),image(Color.GREEN),image(Color.RED))}
+  Thread.sleep(200)
+  assertEquals("Texture replacement must keep the destination",Color.BLUE,centerColor())
+  instrumentation.runOnMainSync {reader.dispose()}
+ }
+ @Test fun libraryGroupsIssuesBeforeOpeningSeries() {
+  val context=ApplicationProvider.getApplicationContext<Context>()
+  val store=LibraryStore(context)
+  val names=listOf("Absolute Superman #1.cbz","Absolute Superman #2.cbz")+(1..4).map {"Absolute Batman #$it.cbz"}
+  val uris=names.map {Uri.fromFile(File(context.cacheDir,it))}
+  try {
+   names.zip(uris).forEach {(name,uri)->store.db.add(uri,name)}
+   compose.activityRule.scenario.recreate()
+   compose.onNodeWithText("Library",useUnmergedTree=true).performClick()
+   compose.onAllNodesWithText("Absolute Superman",substring=false).assertCountEquals(1)
+   compose.onAllNodesWithText("Absolute Batman",substring=false).assertCountEquals(1)
+   compose.onNodeWithText("2 issues").assertExists()
+   compose.onNodeWithText("4 issues").assertExists()
+   compose.onNodeWithText("Absolute Superman",substring=false).performClick()
+   compose.onNodeWithText("Issues in this series").assertExists()
+   compose.onNodeWithText("Absolute Superman #2.cbz").assertExists()
+  } finally {
+   store.db.all().filter {c->uris.any {it.toString()==c.uri}}.forEach {store.db.remove(it.id)}
+   store.db.close()
+  }
+ }
  @Test fun nativeNavigationHasHomeAndBack() {
   compose.onNodeWithText("Library",useUnmergedTree=true).performClick()
   compose.onNodeWithText("Search series or filename").assertExists()
@@ -48,7 +101,7 @@ class ReaderDeviceTest {
   val store=LibraryStore(context);store.db.add(Uri.fromFile(file),file.name)
   compose.activityRule.scenario.recreate()
   compose.onNodeWithText("Library",useUnmergedTree=true).performClick()
-  compose.onNodeWithText("Pepper and Carrot #1.cbz").performClick()
+  compose.onNodeWithText("Pepper and Carrot",substring=false).performClick()
   compose.onNodeWithText("Start Reading").performClick()
   compose.waitUntil(30000) {store.db.all().first{it.name==file.name}.pages==3}
   Thread.sleep(500)

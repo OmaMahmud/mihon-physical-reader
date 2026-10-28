@@ -150,7 +150,12 @@ private fun Modifier.semanticsLabel(label: String): Modifier = this.then(Modifie
                         item {Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){FilterChip(!recent,{recent=false},label={Text("Series")});FilterChip(recent,{recent=true},label={Text("Recently Added")})}}
                         item {Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)){listOf("All","Unread","Reading","Finished").forEach {label->FilterChip(filter==label,{filter=label},label={Text(label,fontSize=12.sp)})}}}
                         if(filtered.isEmpty())item {Glass {Text("No comics match");Text("Import a supported file or choose a folder in Settings.")}}
-                        items(filtered,key={it.id}) {ComicRow(it,{nav.navigate("series/${it.id}")})}
+                        val groups=filtered.groupBy {ComicNames.seriesKey(it.series)}.values
+                            .let {if(recent)it.sortedByDescending {issues->issues.maxOf {it.added}} else it.sortedBy {issues->ComicNames.seriesKey(issues.first().series)}}
+                        items(groups,key={ComicNames.seriesKey(it.first().series)}) {issues ->
+                            val first=issues.minWithOrNull(compareBy<Comic>{it.issue}.thenBy{it.name})!!
+                            SeriesRow(first,comics.count {ComicNames.seriesKey(it.series)==ComicNames.seriesKey(first.series)}) {nav.navigate("series/${first.id}")}
+                        }
                     }
                 }
                 composable("series/{id}") {back ->
@@ -165,7 +170,7 @@ private fun Modifier.semanticsLabel(label: String): Modifier = this.then(Modifie
                             for(i in 0 until JSONArray(comic.marks).length()) {val page=JSONArray(comic.marks).getInt(i);TextButton(onClick={store.db.position(comic.id,page,comic.pages);refresh();nav.navigate("reader/${comic.id}")}){Text("Open bookmark · Page ${page+1}")}}
                         }}
                         item {Text("Issues in this series",style=MaterialTheme.typography.titleLarge)}
-                        items(comics.filter {it.series.equals(comic.series,true)}.sortedBy {it.issue},key={it.id}) {ComicRow(it,{nav.navigate("reader/${it.id}")})}
+                        items(comics.filter {ComicNames.seriesKey(it.series)==ComicNames.seriesKey(comic.series)}.sortedBy {it.issue},key={it.id}) {ComicRow(it,{nav.navigate("reader/${it.id}")})}
                         item {OutlinedButton(onClick={store.db.remove(comic.id);refresh();home()},modifier=Modifier.fillMaxWidth().heightIn(min=48.dp)){Text("Remove from index (keep original)")}}
                     }
                     if(edit)AlertDialog(onDismissRequest={edit=false},title={Text("Series grouping")},text={OutlinedTextField(name,{name=it},label={Text("Series name")})},confirmButton={TextButton(onClick={if(name.isNotBlank()){store.db.renameSeries(comic!!.id,name);refresh();edit=false}}){Text("Save")}},dismissButton={TextButton(onClick={edit=false}){Text("Cancel")}})
@@ -192,6 +197,18 @@ private fun Modifier.semanticsLabel(label: String): Modifier = this.then(Modifie
                 }
             }
             if(busy && !route.startsWith("reader")) LinearProgressIndicator(Modifier.fillMaxWidth())
+        }
+    }
+}
+@Composable private fun SeriesRow(comic: Comic, count: Int, onClick: ()->Unit) {
+    Card(onClick=onClick,modifier=Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Panel),shape=RoundedCornerShape(20.dp)) {
+        Row(Modifier.padding(12.dp),horizontalArrangement=Arrangement.spacedBy(16.dp),verticalAlignment=Alignment.CenterVertically) {
+            Cover(comic,Modifier.width(54.dp).height(78.dp))
+            Column(Modifier.weight(1f)) {
+                Text(comic.series,style=MaterialTheme.typography.titleMedium)
+                Text("$count ${if(count==1)"issue" else "issues"}",color=Blue,style=MaterialTheme.typography.bodyMedium)
+            }
+            Symbol("chevron_right")
         }
     }
 }

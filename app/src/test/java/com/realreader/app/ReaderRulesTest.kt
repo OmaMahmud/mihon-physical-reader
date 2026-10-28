@@ -16,6 +16,11 @@ class ReaderRulesTest {
   assertEquals("Saga" to 12.5,ComicNames.parse("Saga #12.5.cbz"))
   assertTrue(ComicNames.natural("page2.jpg") < ComicNames.natural("page10.jpg"))
  }
+ @Test fun seriesGroupingIgnoresCaseAndExtraSpaces() {
+  assertEquals(ComicNames.seriesKey(" Absolute  Superman "),ComicNames.seriesKey("absolute superman"))
+  assertNotEquals(ComicNames.seriesKey("Absolute Batman"),ComicNames.seriesKey("Absolute Superman"))
+  assertEquals("Absolute Superman" to 2.0,ComicNames.parse("Absolute Superman 002 (2024).cbz"))
+ }
  @Test fun creaseIsFiniteAndSpineIsBound() {
   for(t in listOf(.001f,.2f,.5f,.8f,1f))for(y in listOf(0f,.5f,1f))for(f in listOf(false,true)) {
    val mesh=FoldMesh.create(t,y,1-y,f)

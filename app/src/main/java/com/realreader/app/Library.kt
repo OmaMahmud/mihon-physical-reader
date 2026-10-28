@@ -24,6 +24,7 @@ data class Comic(val id: Long, val uri: String, val name: String, val series: St
     val finished get() = completed || pages > 0 && page >= pages - 1
 }
 object ComicNames {
+    fun seriesKey(series: String) = series.trim().replace(Regex("\\s+"), " ").lowercase(java.util.Locale.ROOT)
     private val number = Regex("^(.*?)[ #_-]+(\\d+(?:\\.\\d+)?)(?:[ _-].*)?$")
     fun parse(name: String): Pair<String, Double> {
         val stem = name.substringBeforeLast('.').replace('_', ' ').trim()

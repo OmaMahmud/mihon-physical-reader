@@ -39,12 +39,19 @@ class PhysicalReader(context: Context): GLSurfaceView(context) {
     })
     init { setEGLContextClientVersion(2);setRenderer(paper);renderMode=RENDERMODE_WHEN_DIRTY;preserveEGLContextOnPause=true; contentDescription="Comic page. Pinch to zoom, drag to pan, swipe at an edge to turn; center tap for controls." }
     fun frames(current: Bitmap,next: Bitmap?,previous: Bitmap?) {
-        ready=true;queueEvent { paper.setFrames(current,next,previous) };requestRender()
+        ready=false
+        queueEvent {
+            paper.setFrames(current,next,previous)
+            // Reset only after the replacement textures are installed on the GL thread.
+            paper.progress=0f
+            requestRender()
+            post { ready=true }
+        }
     }
     fun resetZoom() { zoom=1f;panX=0f;panY=0f;clamp() }
     private fun horizontalBound()=max(0f,width*(paper.fitX*zoom-1)/2)
     private fun clamp() { val bx=horizontalBound();val by=max(0f,height*(paper.fitY*zoom-1)/2);panX=panX.coerceIn(-bx,bx);panY=panY.coerceIn(-by,by);paper.zoom=zoom;paper.panX=if(width>0)panX*2/width else 0f;paper.panY=if(height>0)-panY*2/height else 0f;requestRender() }
-    fun turn(logical: Int) { if(!ready || animator!=null)return; val physical=logical*(if(rtl)-1 else 1); turning=logical;paper.backward=physical<0;paper.target=logical;paper.grab=.5f;paper.move=.5f;animate(true) }
+    fun turn(logical: Int) { if(!ready || animator!=null || !paper.canTurn(logical))return; val physical=logical*(if(rtl)-1 else 1); turning=logical;paper.backward=physical<0;paper.target=logical;paper.grab=.5f;paper.move=.5f;animate(true) }
     private fun animate(commit: Boolean) {
         val end=if(commit)1f else 0f
         animator=ValueAnimator.ofFloat(paper.progress,end).apply {
@@ -57,7 +64,8 @@ class PhysicalReader(context: Context): GLSurfaceView(context) {
                 override fun onAnimationEnd(animation: android.animation.Animator) {
                     animator=null
                     if(commit) { ready=false; onTurn(turning); resetZoom() }
-                    paper.progress=0f;requestRender()
+                    if(!commit)paper.progress=0f
+                    requestRender()
                 }
             });start()
         }
@@ -73,7 +81,7 @@ class PhysicalReader(context: Context): GLSurfaceView(context) {
                 if(pinched || scale.isInProgress)return true
                 val dx=e.x-startX;val dy=e.y-startY
                 if(zoom<=1.01f && abs(dx)>16 && abs(dx)>abs(dy)*1.3f) {
-                    if(!dragging) { dragging=true;turning=(if(dx<0)1 else -1)*(if(rtl)-1 else 1);paper.backward=dx>0;paper.target=turning;paper.grab=1-startY/height }
+                    if(!dragging) { dragging=true;turning=(if(dx<0)1 else -1)*(if(rtl)-1 else 1);if(!paper.canTurn(turning)){dragging=false;return true};paper.backward=dx>0;paper.target=turning;paper.grab=1-startY/height }
                     val elapsed=max(1L,e.eventTime-lastTime)
                     velocity=.65f*velocity+.35f*((e.x-lastX)/width/elapsed*1000)
                     val travel=max(1f,1.5f*paper.fitX*width/(if(bookMode)2 else 1))
@@ -109,7 +117,7 @@ private class PaperRenderer: GLSurfaceView.Renderer {
     @Volatile var rtl=false
     @Volatile var book=false
     private var program=0;private var screenRatio=1f;private var ratio=1f
-    private val textures=IntArray(3);private var hasNext=false;private var hasPrev=false
+    private val textures=IntArray(3);@Volatile private var hasNext=false;@Volatile private var hasPrev=false
     private var source: Array<Bitmap?> = arrayOfNulls(3)
     private var buffer=ByteBuffer.allocateDirect(88*56*2*6*5*4).order(ByteOrder.nativeOrder()).asFloatBuffer()
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
@@ -128,6 +136,7 @@ private class PaperRenderer: GLSurfaceView.Renderer {
         val old=source;source=arrayOf(c,n,p);ratio=c.width.toFloat()/c.height;hasNext=n!=null;hasPrev=p!=null
         source.forEachIndexed { i,b -> if(b!=null)upload(i,b) };old.filterNotNull().filter { it !in source }.forEach {it.recycle()}
     }
+    fun canTurn(logical: Int) = if(logical>0)hasNext else hasPrev
     private fun flat(z:Float=0f)=floatArrayOf(0f,0f,z,0f,1f,1f,0f,z,1f,1f,0f,1f,z,0f,0f,0f,1f,z,0f,0f,1f,0f,z,1f,1f,1f,1f,z,1f,0f)
     private fun draw(data:FloatArray,texture:Int,back:Float=0f,mirror:Float=0f,leafBase:Float=0f,leafScale:Float=1f,uvBase:Float=0f,uvScale:Float=1f) {
         if(data.isEmpty())return
@@ -143,9 +152,12 @@ private class PaperRenderer: GLSurfaceView.Renderer {
         val x=if(fitRatio>screenRatio)1f else fitRatio/screenRatio;val y=if(fitRatio>screenRatio)screenRatio/fitRatio else 1f
         fitX=x;fitY=y
         glUniform4f(glGetUniformLocation(program,"uRect"),x,y,0f,0f);glUniform3f(glGetUniformLocation(program,"uZoom"),zoom,panX,panY)
+        // One progress snapshot for both sides: UI animation updates must not split a mesh frame.
+        val frameProgress=progress
+        val frameGrab=grab;val frameMove=move
         val valid=if(target>0)hasNext else hasPrev
         val solo=book && ratio<1.25f
-        if(progress<=0 || !valid) {draw(flat(),0,leafBase=if(solo && !rtl).5f else 0f,leafScale=if(solo).5f else 1f);return}
+        if(frameProgress<=0 || !valid) {draw(flat(),0,leafBase=if(solo && !rtl).5f else 0f,leafScale=if(solo).5f else 1f);return}
         val incoming=if(target>0)1 else 2
         val mirror=if(backward)1f else 0f
         if(book) {
@@ -156,13 +168,13 @@ private class PaperRenderer: GLSurfaceView.Renderer {
             val leafBase=if(backward)0f else .5f
             val frontBase=if(solo)0f else leafBase
             val frontScale=if(solo)1f else .5f
-            draw(FoldMesh.create(progress,grab,move,false),0,0f,mirror,leafBase,.5f,frontBase,frontScale)
+            draw(FoldMesh.create(frameProgress,frameGrab,frameMove,false),0,0f,mirror,leafBase,.5f,frontBase,frontScale)
             // Verso belongs to the next physical leaf, correctly reversed along the fold.
-            draw(FoldMesh.create(progress,grab,move,true),incoming,0f,mirror,leafBase,.5f,if(incomingSolo)1f else if(backward)1f else .5f,if(incomingSolo)-1f else -.5f)
+            draw(FoldMesh.create(frameProgress,frameGrab,frameMove,true),incoming,0f,mirror,leafBase,.5f,if(incomingSolo)1f else if(backward)1f else .5f,if(incomingSolo)-1f else -.5f)
         } else {
             draw(flat(-.01f),incoming)
-            draw(FoldMesh.create(progress,grab,move,false),0,0f,mirror)
-            draw(FoldMesh.create(progress,grab,move,true),incoming,1f,mirror)
+            draw(FoldMesh.create(frameProgress,frameGrab,frameMove,false),0,0f,mirror)
+            draw(FoldMesh.create(frameProgress,frameGrab,frameMove,true),incoming,1f,mirror)
         }
     }
     fun release() {glDeleteTextures(3,textures,0);source.filterNotNull().forEach {it.recycle()};source=arrayOfNulls(3);glDeleteProgram(program)}
