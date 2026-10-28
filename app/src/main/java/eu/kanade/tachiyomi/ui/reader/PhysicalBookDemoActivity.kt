@@ -4,6 +4,7 @@ import android.app.Activity
 import android.os.Bundle
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.WebChromeClient
 
 /** Experimental bundled renderer demo, not yet connected to Mihon chapters. */
 class PhysicalBookDemoActivity : Activity() {
@@ -16,6 +17,7 @@ class PhysicalBookDemoActivity : Activity() {
             settings.domStorageEnabled = true
             settings.allowFileAccess = true
             webViewClient = WebViewClient()
+            webChromeClient = WebChromeClient()
             loadUrl("file:///android_asset/physical_book_demo.html")
         }
         setContentView(webView)
