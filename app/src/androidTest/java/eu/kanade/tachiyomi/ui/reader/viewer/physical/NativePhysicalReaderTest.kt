@@ -2,15 +2,15 @@ package eu.kanade.tachiyomi.ui.reader.viewer.physical
 
 import android.content.Context
 import android.content.pm.ActivityInfo
-import android.util.Log
-import android.os.ParcelFileDescriptor
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.opengl.GLSurfaceView
+import android.os.ParcelFileDescriptor
 import android.os.SystemClock
+import android.util.Log
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
@@ -22,22 +22,22 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.UiDevice
-import eu.kanade.tachiyomi.ui.reader.ReaderActivity
-import eu.kanade.tachiyomi.ui.reader.loader.HttpPageLoader
-import eu.kanade.tachiyomi.ui.reader.model.ReaderChapter
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.online.HttpSource
+import eu.kanade.tachiyomi.ui.reader.ReaderActivity
+import eu.kanade.tachiyomi.ui.reader.loader.HttpPageLoader
+import eu.kanade.tachiyomi.ui.reader.model.ReaderChapter
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderOrientation
 import eu.kanade.tachiyomi.ui.reader.setting.ReadingMode
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import mihon.app.di.AppGraph
 import mihon.core.metro.metroGraph
 import org.junit.Assert.assertEquals
@@ -48,14 +48,14 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.manga.model.Manga
-import java.io.File
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.net.ServerSocket
-import java.util.concurrent.atomic.AtomicInteger
-import kotlin.concurrent.thread
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import kotlin.concurrent.thread
 import kotlin.math.max
 
 @RunWith(AndroidJUnit4::class)
@@ -82,14 +82,16 @@ class NativePhysicalReaderTest {
                         val fail = failing.get()
                         val body = if (fail) byteArrayOf() else bytes
                         val status = if (fail) "500 Test retry" else "200 OK"
-                        val headers = "HTTP/1.1 $status\r\nContent-Type: image/png\r\nContent-Length: "+
+                        val headers = "HTTP/1.1 $status\r\nContent-Type: image/png\r\nContent-Length: " +
                             body.size + "\r\nConnection: close\r\n\r\n"
                         socket.getOutputStream().write(headers.toByteArray())
                         socket.getOutputStream().write(body)
                         socket.getOutputStream().flush()
                     }
                 }
-            } catch (e: Exception) { Log.i("NativePhysicalTest", "Test server stopped: $e") }
+            } catch (e: Exception) {
+                Log.i("NativePhysicalTest", "Test server stopped: $e")
+            }
         }
         val source = object : HttpSource() {
             override val name = "Native physical network test"
@@ -140,7 +142,7 @@ class NativePhysicalReaderTest {
     fun realCbzUsesNativeCurlControlsProgressAndLifecycle() {
         val root = File(context.getExternalFilesDir(null), "native-reader-test").apply { mkdirs() }
         val folder = File(root, "local/Native Curl Proof").apply { mkdirs() }
-        makeChapter(File(folder, "001.cbz"))
+        makeChapter(File(folder, "001.cbz"), 8)
         makeChapter(File(folder, "002.cbz"), 2)
         graph.storagePreferences.baseStorageDirectory.set(root.toUri().toString())
         graph.basePreferences.shownOnboardingFlow.set(true)
@@ -218,8 +220,13 @@ class NativePhysicalReaderTest {
             swipe(true)
             waitFor(scenario) { it.viewModel.state.value.currentPage == 2 }
             repeat(5) {
-                device.swipe(device.displayWidth * 9 / 10, device.displayHeight * 3 / 5,
-                    device.displayWidth / 10, device.displayHeight * 3 / 5, 3)
+                device.swipe(
+                    device.displayWidth * 9 / 10,
+                    device.displayHeight * 3 / 5,
+                    device.displayWidth / 10,
+                    device.displayHeight * 3 / 5,
+                    3,
+                )
                 SystemClock.sleep(40)
             }
             SystemClock.sleep(900)
@@ -251,7 +258,10 @@ class NativePhysicalReaderTest {
             scenario.onActivity { adjacent.set(it.viewModel.state.value.viewerChapters?.nextChapter != null) }
             assertTrue("Second chapter was loaded by Mihon", adjacent.get())
             scenario.onActivity { activity -> activity.lifecycleScopeForTestLoadNext() }
-            waitFor(scenario) { it.viewModel.state.value.currentChapter?.chapter?.id != first.id && it.viewModel.state.value.currentPage == 1 }
+            waitFor(scenario) {
+                it.viewModel.state.value.currentChapter?.chapter?.id != first.id &&
+                    it.viewModel.state.value.currentPage == 1
+            }
             capture("04-native-next-chapter")
             swipe(false)
             waitFor(scenario) { it.viewModel.state.value.currentPage == 2 }
@@ -265,6 +275,16 @@ class NativePhysicalReaderTest {
             }
             SystemClock.sleep(500)
             capture("08-native-reopened-progress")
+            reopened.onActivity { it.moveToPageIndex(7) }
+            waitFor(reopened) { it.viewModel.state.value.currentPage == 8 }
+            SystemClock.sleep(500)
+            swipe(false)
+            swipe(false)
+            waitFor(reopened) {
+                it.viewModel.state.value.currentChapter?.chapter?.id != first.id &&
+                    it.viewModel.state.value.currentPage == 1
+            }
+            capture("09-native-gesture-chapter-boundary")
         }
         val saved = runBlocking { graph.chapterRepository.getChapterById(first.id) }
         assertNotNull(saved)
@@ -332,10 +352,13 @@ class NativePhysicalReaderTest {
             SystemClock.sleep(200)
         }
         scenario.onActivity {
-            Log.e("NativePhysicalTest", "Timed out: chapter=${it.viewModel.state.value.currentChapter?.chapter?.id} " +
-                "page=${it.viewModel.state.value.currentPage} " +
-                "requested=${it.viewModel.state.value.currentChapter?.requestedPage} " +
-                "loading=${it.viewModel.state.value.isLoadingAdjacentChapter}")
+            Log.e(
+                "NativePhysicalTest",
+                "Timed out: chapter=${it.viewModel.state.value.currentChapter?.chapter?.id} " +
+                    "page=${it.viewModel.state.value.currentPage} " +
+                    "requested=${it.viewModel.state.value.currentChapter?.requestedPage} " +
+                    "loading=${it.viewModel.state.value.isLoadingAdjacentChapter}",
+            )
         }
         capture("99-native-failed-condition")
         throw AssertionError("Native reader condition timed out; inspect logcat and screenshots")

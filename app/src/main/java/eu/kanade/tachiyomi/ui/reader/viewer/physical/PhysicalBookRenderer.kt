@@ -13,9 +13,9 @@ import android.opengl.GLES20.GL_FLOAT
 import android.opengl.GLES20.GL_FRAGMENT_SHADER
 import android.opengl.GLES20.GL_LEQUAL
 import android.opengl.GLES20.GL_LINEAR
+import android.opengl.GLES20.GL_LINEAR_MIPMAP_LINEAR
 import android.opengl.GLES20.GL_LINK_STATUS
 import android.opengl.GLES20.GL_MAX_TEXTURE_SIZE
-import android.opengl.GLES20.GL_LINEAR_MIPMAP_LINEAR
 import android.opengl.GLES20.GL_ONE_MINUS_SRC_ALPHA
 import android.opengl.GLES20.GL_REPEAT
 import android.opengl.GLES20.GL_SRC_ALPHA
@@ -48,8 +48,8 @@ import android.opengl.GLES20.glEnable
 import android.opengl.GLES20.glEnableVertexAttribArray
 import android.opengl.GLES20.glGenTextures
 import android.opengl.GLES20.glGenerateMipmap
-import android.opengl.GLES20.glGetIntegerv
 import android.opengl.GLES20.glGetAttribLocation
+import android.opengl.GLES20.glGetIntegerv
 import android.opengl.GLES20.glGetProgramInfoLog
 import android.opengl.GLES20.glGetProgramiv
 import android.opengl.GLES20.glGetShaderInfoLog
@@ -68,9 +68,9 @@ import android.opengl.GLES20.glVertexAttribPointer
 import android.opengl.GLES20.glViewport
 import android.opengl.GLSurfaceView
 import android.opengl.GLUtils
-import ca.mpreg.imagedecoder.ImageDecoder
 import android.os.SystemClock
 import android.util.Log
+import ca.mpreg.imagedecoder.ImageDecoder
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
@@ -107,6 +107,7 @@ internal class PhysicalBookRenderer(
     private var measuredFrames = 0
     private var measuredNanos = 0L
     private var measuredMaxNanos = 0L
+
     @Volatile
     var maxPageDimension = 2048
         private set
@@ -272,6 +273,7 @@ internal class PhysicalBookRenderer(
     }
 
     private fun rebuild(keep: Int) {
+        val wasClosedEnd = book && index >= 0 && index == faces.lastIndex
         val result = ArrayList<Face>()
         for (n in 0 until count) {
             val (w, h) = dimensions[n] ?: (1000 to 1360)
@@ -288,6 +290,8 @@ internal class PhysicalBookRenderer(
         index = if (book) {
             if (keep == 0) {
                 -1
+            } else if (wasClosedEnd && face == faces.lastIndex) {
+                faces.lastIndex
             } else if (face % 2 == 1) {
                 face
             } else {
@@ -390,7 +394,10 @@ internal class PhysicalBookRenderer(
         boundaryDrag = false
         if (zoom > 1.001) return
         val wide = !book && faces.getOrNull(index)?.wide == true
-        if (!wide && !canTurn(direction)) { boundaryDrag = true; return }
+        if (!wide && !canTurn(direction)) {
+            boundaryDrag = true
+            return
+        }
         if (!wide && !readyToTurn(direction)) return
         drag = true
         spreadTurn = false

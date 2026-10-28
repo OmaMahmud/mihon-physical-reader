@@ -1,8 +1,8 @@
 package eu.kanade.tachiyomi.ui.reader.viewer.physical
 
-import android.util.Log
 import android.graphics.Bitmap
 import android.opengl.GLSurfaceView
+import android.util.Log
 import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
@@ -23,7 +23,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import ca.mpreg.imagedecoder.ImageDecoder
-import java.io.ByteArrayInputStream
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
@@ -31,7 +30,6 @@ import eu.kanade.tachiyomi.ui.reader.model.ViewerChapters
 import eu.kanade.tachiyomi.ui.reader.viewer.ReaderPageError
 import eu.kanade.tachiyomi.ui.reader.viewer.Viewer
 import kotlinx.coroutines.CancellationException
-import mihon.app.di.appGraph
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
@@ -43,11 +41,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import mihon.app.di.appGraph
 import tachiyomi.presentation.core.screens.LoadingScreen
+import java.io.ByteArrayInputStream
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
-import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.hypot
 import kotlin.math.max
 
@@ -58,6 +58,7 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
     private val jobs = ConcurrentHashMap<Int, Job>()
     private var chapters: ViewerChapters? = null
     private var surface: BookSurface? = null
+
     @Volatile
     private var generation = 0
     private var knownDimensions = emptyMap<Int, Pair<Int, Int>>()
@@ -296,6 +297,7 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
 
     private inner class BookSurface : GLSurfaceView(activity) {
         private val pending = ConcurrentLinkedQueue<RenderCommand>()
+
         @Volatile
         private var disposed = false
         private var activeChapterGeneration = -1
@@ -373,7 +375,9 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
             setEGLConfigChooser(8, 8, 8, 8, 16, 0)
             preserveEGLContextOnPause = true
             setRenderer(object : GLSurfaceView.Renderer {
-                override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) { renderer.onSurfaceCreated(gl, config) }
+                override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
+                    renderer.onSurfaceCreated(gl, config)
+                }
                 override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
                     renderer.onSurfaceChanged(gl, width, height)
                 }
@@ -395,13 +399,18 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
             }
         }
         fun command(onDiscard: (() -> Unit)? = null, action: PhysicalBookRenderer.() -> Unit) {
-            if (disposed) { onDiscard?.invoke(); return }
+            if (disposed) {
+                onDiscard?.invoke()
+                return
+            }
             pending.add(RenderCommand(action, onDiscard))
             requestRender()
         }
         fun dispose() {
             disposed = true
-            while (true) { (pending.poll() ?: break).discard?.invoke() }
+            while (true) {
+                (pending.poll() ?: break).discard?.invoke()
+            }
             queueEvent {
                 if (android.opengl.EGL14.eglGetCurrentContext() != android.opengl.EGL14.EGL_NO_CONTEXT) {
                     renderer.release()
