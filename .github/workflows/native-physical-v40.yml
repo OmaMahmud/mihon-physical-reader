@@ -1,0 +1,39 @@
+name: Native Physical v4.0 Verification
+on:
+  push:
+    branches: [native-physical-v40]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: native-physical-v40
+  cancel-in-progress: true
+jobs:
+  native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version-file: .github/.java-version
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Format native sources
+        run: |
+          ./gradlew spotlessApply
+          git diff --binary > native-format.patch
+          echo NATIVE_FORMAT_BEGIN
+          cat native-format.patch
+          echo NATIVE_FORMAT_END
+      - name: Test approved mesh and build native APK
+        run: ./gradlew :app:testDebugUnitTest :app:assembleDebug --stacktrace
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-physical-v40-build
+          path: |
+            app/build/outputs/apk/debug/*universal*.apk
+            app/build/reports/tests/testDebugUnitTest
+            native-format.patch
+          if-no-files-found: error

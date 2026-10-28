@@ -20,8 +20,6 @@ class ReaderPreferences(
     preferenceStore: PreferenceStore,
 ) {
 
-    val physicalBook: Preference<Boolean> = preferenceStore.getBoolean("physical_book_reader", true)
-
     // region General
 
     val pageTransitions: Preference<Boolean> = preferenceStore.getBoolean("pref_enable_transitions_key", true)
