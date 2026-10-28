@@ -442,7 +442,11 @@ internal class PhysicalBookRenderer(
         glActiveTexture(GL_TEXTURE0)
         scalar("uReaderGray", if (readerGray) 1f else 0f)
         scalar("uInvert", if (inverted) 1f else 0f)
-        val candidate = if (book) listOfNotNull(faces.getOrNull(max(0, index)), faces.getOrNull(max(0, index + 1))) else listOfNotNull(faces.getOrNull(index))
+        val candidate = if (book) {
+            listOfNotNull(faces.getOrNull(max(0, index)), faces.getOrNull(max(0, index + 1)))
+        } else {
+            listOfNotNull(faces.getOrNull(index))
+        }
         ph = candidate.map { it.aspect }.filter { it > 0.7f && it < 2.4f }.maxOrNull() ?: 1.36f
         val fit = min(width / ((if (book) 2f else 1f) + 0.1f), height / (ph + 0.1f))
         viewSw = width / fit
@@ -464,12 +468,31 @@ internal class PhysicalBookRenderer(
         if (animationDuration > 0) nextFrame()
     }
 
-    private fun rect(x0: Float, y0: Float, x1: Float, y1: Float, z: Float, u0: Float = 0f, u1: Float = 1f) = floatArrayOf(
+    private fun rect(
+        x0: Float,
+        y0: Float,
+        x1: Float,
+        y1: Float,
+        z: Float,
+        u0: Float = 0f,
+        u1: Float = 1f,
+    ) = floatArrayOf(
         x0, y0, z, u0, 0f, x1, y0, z, u1, 0f, x0, y1, z, u0, 1f,
         x0, y1, z, u0, 1f, x1, y0, z, u1, 0f, x1, y1, z, u1, 1f,
     )
 
-    private fun draw(vertices: FloatArray, face: Face?, light: Float = 1f, gray: Boolean = false, turning: Boolean = false, reverse: Boolean = false, mesh: Boolean = false, zOffset: Float = 0f, shadow: FloatArray? = null, uvMapped: Boolean = false) {
+    private fun draw(
+        vertices: FloatArray,
+        face: Face?,
+        light: Float = 1f,
+        gray: Boolean = false,
+        turning: Boolean = false,
+        reverse: Boolean = false,
+        mesh: Boolean = false,
+        zOffset: Float = 0f,
+        shadow: FloatArray? = null,
+        uvMapped: Boolean = false,
+    ) {
         if (vertices.isEmpty() || face == null) return
         val texture = if (face.source == -1) notice else if (face.source == -2) backing else textures[face.source]?.id ?: return
         val crop = if (face.side >= 0) 0.5f else 1f
