@@ -15,6 +15,8 @@ import android.opengl.GLES20.GL_FRAGMENT_SHADER
 import android.opengl.GLES20.GL_LEQUAL
 import android.opengl.GLES20.GL_LINEAR
 import android.opengl.GLES20.GL_LINK_STATUS
+import android.opengl.GLES20.GL_MAX_TEXTURE_SIZE
+import android.opengl.GLES20.GL_LINEAR_MIPMAP_LINEAR
 import android.opengl.GLES20.GL_ONE_MINUS_SRC_ALPHA
 import android.opengl.GLES20.GL_REPEAT
 import android.opengl.GLES20.GL_SRC_ALPHA
@@ -46,6 +48,8 @@ import android.opengl.GLES20.glDrawArrays
 import android.opengl.GLES20.glEnable
 import android.opengl.GLES20.glEnableVertexAttribArray
 import android.opengl.GLES20.glGenTextures
+import android.opengl.GLES20.glGenerateMipmap
+import android.opengl.GLES20.glGetIntegerv
 import android.opengl.GLES20.glGetAttribLocation
 import android.opengl.GLES20.glGetProgramInfoLog
 import android.opengl.GLES20.glGetProgramiv
@@ -103,6 +107,9 @@ internal class PhysicalBookRenderer(
     private var measuredFrames = 0
     private var measuredNanos = 0L
     private var measuredMaxNanos = 0L
+    @Volatile
+    var maxPageDimension = 2048
+        private set
     private var program = 0
     private var grain = 0
     private var backing = 0
@@ -147,6 +154,9 @@ internal class PhysicalBookRenderer(
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         textures.clear()
+        val limit = IntArray(1)
+        glGetIntegerv(GL_MAX_TEXTURE_SIZE, limit, 0)
+        maxPageDimension = min(4096, limit[0].coerceAtLeast(2048))
         uniforms.clear()
         fun shader(type: Int, path: String): Int {
             val id = glCreateShader(type)
@@ -251,6 +261,10 @@ internal class PhysicalBookRenderer(
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, if (repeat) GL_REPEAT else GL_CLAMP_TO_EDGE)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, if (repeat) GL_REPEAT else GL_CLAMP_TO_EDGE)
         GLUtils.texImage2D(GL_TEXTURE_2D, 0, bitmap, 0)
+        if (repeat) {
+            glGenerateMipmap(GL_TEXTURE_2D)
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
+        }
         return ids[0]
     }
 
@@ -573,8 +587,8 @@ internal class PhysicalBookRenderer(
                 lastReported = selectedSource
                 selected(selectedSource)
             }
-            val retained = (selectedSource - 3..selectedSource + 4).filter { it in 0 until count }.toSet()
-            listOf(1, -1, 2, -2, 3, -3, 4).map { selectedSource + it }.filter { it in retained }
+            val retained = (selectedSource - 2..selectedSource + 3).filter { it in 0 until count }.toSet()
+            listOf(1, -1, 2, -2, 3).map { selectedSource + it }.filter { it in retained }
                 .forEach { if (!textures.containsKey(it)) requestPage(it, false) }
             val stale = textures.keys.filter { it !in retained }
             stale.forEach { key -> textures.remove(key)?.let { glDeleteTextures(1, intArrayOf(it.id), 0) } }

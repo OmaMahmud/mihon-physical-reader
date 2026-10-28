@@ -190,6 +190,7 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
             jobs[index] = scope.launch {
                 while (isActive && token == generation) {
                     try {
+                        val decodeLimit = surface?.maxPageDimension ?: 2048
                         val decoded = withContext(Dispatchers.IO) {
                             decodeLock.withLock {
                                 coroutineScope {
@@ -210,7 +211,7 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
                                             inPreferredConfig = Bitmap.Config.ARGB_8888
                                             while (max(bounds.outWidth, bounds.outHeight) /
                                                 inSampleSize.coerceAtLeast(1) >
-                                                2048
+                                                decodeLimit
                                             ) {
                                                 inSampleSize = inSampleSize.coerceAtLeast(1) * 2
                                             }
@@ -277,6 +278,7 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
         private var scaling = false
         private var longPressed = false
         private val slop = ViewConfiguration.get(activity).scaledTouchSlop
+        val maxPageDimension: Int get() = renderer.maxPageDimension
         private val renderer = PhysicalBookRenderer(
             activity,
             reversed,

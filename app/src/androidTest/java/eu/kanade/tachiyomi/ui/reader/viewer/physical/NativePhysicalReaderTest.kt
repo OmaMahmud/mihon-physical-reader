@@ -226,7 +226,7 @@ class NativePhysicalReaderTest {
             scenario.onActivity { adjacent.set(it.viewModel.state.value.viewerChapters?.nextChapter != null) }
             assertTrue("Second chapter was loaded by Mihon", adjacent.get())
             scenario.onActivity { activity -> activity.lifecycleScopeForTestLoadNext() }
-            waitFor(scenario) { it.viewModel.state.value.currentChapter?.chapter?.id != first.id }
+            waitFor(scenario) { it.viewModel.state.value.currentChapter?.chapter?.id != first.id && it.viewModel.state.value.currentPage == 1 }
             capture("04-native-next-chapter")
         }
         val saved = runBlocking { graph.chapterRepository.getChapterById(first.id) }
