@@ -1,16 +1,16 @@
 package eu.kanade.tachiyomi.ui.reader.viewer.physical
 
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
 
 class PhysicalBookPaginationTest {
     @Test
     fun closedEndsReopenTheLastSpreadWithoutSkippingASheet() {
         val cases = mapOf(0 to -1, 1 to -1, 2 to 1, 3 to 1, 4 to 3, 5 to 3, 24 to 23, 25 to 23)
         cases.forEach { (last, previous) ->
-            assertEquals("Last face $last", previous, PhysicalBookPagination.beforeClosedEnd(last))
+            assertEquals(previous, PhysicalBookPagination.beforeClosedEnd(last), "Last face $last")
         }
     }
 
