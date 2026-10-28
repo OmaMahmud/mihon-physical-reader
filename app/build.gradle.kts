@@ -37,8 +37,8 @@ android {
     defaultConfig {
         applicationId = "app.mihon.physicaldemo"
 
-        versionCode = 39
-        versionName = "0.21.3"
+        versionCode = 40
+        versionName = "0.21.3-physical-book"
 
         buildConfigField("boolean", "TELEMETRY_INCLUDED", "${Config.includeTelemetry}")
         buildConfigField("boolean", "UPDATER_ENABLED", "${Config.enableUpdater}")

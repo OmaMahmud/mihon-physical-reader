@@ -18,19 +18,25 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -57,6 +63,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.keepScreenOn
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.getSystemService
 import androidx.core.net.toUri
 import androidx.core.view.WindowInsetsCompat
@@ -154,6 +161,7 @@ class ReaderActivity : BaseActivity() {
     private val windowInsetsController by lazy { WindowInsetsControllerCompat(window, window.decorView) }
 
     private var isLoadingViewer by mutableStateOf(false)
+    private var physicalBookView: PhysicalBookView? = null
 
     /**
      * Viewer used to display the pages (pager, webtoon, ...).
@@ -191,6 +199,7 @@ class ReaderActivity : BaseActivity() {
 
         setComposeContent {
             val state by viewModel.state.collectAsState()
+            val physicalBook by readerPreferences.physicalBook.collectAsState()
             val general by settingsViewModel.general.collectAsState()
             val showPageNumber by readerPreferences.showPageNumber.collectAsState()
             val flashOnPageChange by readerPreferences.flashOnPageChange.collectAsState()
@@ -217,51 +226,84 @@ class ReaderActivity : BaseActivity() {
             val focusRequester = remember { FocusRequester() }
             LaunchedEffect(Unit) { focusRequester.requestFocus() }
 
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(backgroundColor)
-                    .onPreviewKeyEvent(::onKeyEvent)
-                    .focusRequester(focusRequester)
-                    .focusable()
-                    .pointerInput(Unit) {
-                        awaitEachGesture {
-                            awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                            navigationOverlayState.hide()
-                        }
-                    }
-                    .then(if (general.keepScreenOn) Modifier.keepScreenOn() else Modifier),
-            ) {
-                ReaderViewer()
-
-                if (isLoadingViewer) {
-                    LoadingScreen()
-                    return@Box
-                }
-
-                ReaderContentOverlay(
-                    brightness = brightness,
-                    color = colorOverlay.takeIf { colorOverlayEnabled },
-                    colorBlendMode = colorOverlayBlendMode,
-                )
-
-                if (!state.menuVisible && showPageNumber) {
-                    ReaderPageIndicator(
-                        currentPage = state.currentPage,
-                        totalPages = state.totalPages,
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .navigationBarsPadding(),
+            Column(modifier = Modifier.fillMaxSize()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surface)
+                        .statusBarsPadding()
+                        .padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = if (physicalBook) "Physical book · On" else "Physical book · Off (Classic)",
+                        modifier = Modifier.weight(1f),
+                    )
+                    Switch(
+                        checked = physicalBook,
+                        onCheckedChange = { enabled ->
+                            readerPreferences.physicalBook.set(enabled)
+                            if (!enabled) {
+                                state.viewerChapters?.let { viewer?.setChapters(it) }
+                            }
+                        },
                     )
                 }
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(backgroundColor)
+                        .onPreviewKeyEvent(::onKeyEvent)
+                        .focusRequester(focusRequester)
+                        .focusable()
+                        .pointerInput(Unit) {
+                            awaitEachGesture {
+                                awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                                navigationOverlayState.hide()
+                            }
+                        }
+                        .then(if (general.keepScreenOn) Modifier.keepScreenOn() else Modifier),
+                ) {
+                    val chapter = state.currentChapter
+                    if (physicalBook && chapter?.pages != null) {
+                        key(chapter) {
+                            PhysicalReader(chapter)
+                        }
+                    } else {
+                        ReaderViewer()
+                    }
 
-                if (flashOnPageChange) {
-                    DisplayRefreshHost(hostState = displayRefreshHost)
+                    if (isLoadingViewer) {
+                        LoadingScreen()
+                        return@Box
+                    }
+
+                    ReaderContentOverlay(
+                        brightness = brightness,
+                        color = colorOverlay.takeIf { colorOverlayEnabled },
+                        colorBlendMode = colorOverlayBlendMode,
+                    )
+
+                    if (!physicalBook && !state.menuVisible && showPageNumber) {
+                        ReaderPageIndicator(
+                            currentPage = state.currentPage,
+                            totalPages = state.totalPages,
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .navigationBarsPadding(),
+                        )
+                    }
+
+                    if (flashOnPageChange) {
+                        DisplayRefreshHost(hostState = displayRefreshHost)
+                    }
+
+                    if (!physicalBook) {
+                        ReaderNavigationOverlay(state = navigationOverlayState)
+                    }
+
+                    AppBars(state = state)
                 }
-
-                ReaderNavigationOverlay(state = navigationOverlayState)
-
-                AppBars(state = state)
             }
 
             if (state.isLoadingAdjacentChapter) {
@@ -454,6 +496,31 @@ class ReaderActivity : BaseActivity() {
     }
 
     @Composable
+    private fun PhysicalReader(chapter: ReaderChapter) {
+        val book = remember(chapter) {
+            PhysicalBookView(
+                context = this,
+                chapter = chapter,
+                onPage = ::onPageSelected,
+                onMenu = ::toggleMenu,
+                onNextChapter = ::loadNextChapter,
+                onPreviousChapter = ::loadPreviousChapter,
+            )
+        }
+        DisposableEffect(book) {
+            physicalBookView = book
+            onDispose {
+                physicalBookView = null
+                book.release()
+            }
+        }
+        AndroidView(
+            factory = { book },
+            modifier = Modifier.fillMaxSize().navigationBarsPadding(),
+        )
+    }
+
+    @Composable
     private fun ReaderViewer() {
         val viewer by viewerFlow.collectAsState()
         val general by settingsViewModel.general.collectAsState()
@@ -521,8 +588,8 @@ class ReaderActivity : BaseActivity() {
         if (isUp) {
             when (action) {
                 Action.MENU -> toggleMenu()
-                Action.FORWARD -> viewer.moveForward()
-                Action.BACKWARD -> viewer.moveBackward()
+                Action.FORWARD -> physicalBookView?.moveForward() ?: viewer.moveForward()
+                Action.BACKWARD -> physicalBookView?.moveBackward() ?: viewer.moveBackward()
             }
         }
         return true
@@ -555,37 +622,6 @@ class ReaderActivity : BaseActivity() {
         val verticalNavigatorOnLeft by readerPreferences.verticalNavigatorOnLeft.collectAsState()
         val verticalNavigatorHeight by readerPreferences.verticalNavigatorHeight.collectAsState()
 
-        // The physical renderer is currently a preview, not a chapter viewer.
-        // Preserve the fully functional Mihon viewer until real pages are wired in.
-        var showReaderOptions by remember { mutableStateOf(false) }
-        TextButton(onClick = { showReaderOptions = true }) {
-            Text("Reader options")
-        }
-        if (showReaderOptions) {
-            AlertDialog(
-                onDismissRequest = { showReaderOptions = false },
-                title = { Text("Reading experience") },
-                text = {
-                    Text(
-                        "Classic Mihon reads the current chapter. Physical Book v4.0 " +
-                            "is a preview with sample pages until chapter integration is complete.",
-                    )
-                },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            showReaderOptions = false
-                            startActivity(Intent(this, PhysicalBookDemoActivity::class.java))
-                        },
-                    ) { Text("Preview Physical Book") }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showReaderOptions = false }) {
-                        Text("Continue Classic")
-                    }
-                },
-            )
-        }
         ReaderAppBars(
             visible = state.menuVisible,
 
@@ -753,6 +789,10 @@ class ReaderActivity : BaseActivity() {
      * page is not found.
      */
     private fun moveToPageIndex(index: Int) {
+        physicalBookView?.let {
+            it.moveToPage(index)
+            return
+        }
         val viewer = this.viewer ?: return
         val currentChapter = viewModel.state.value.currentChapter ?: return
         val page = currentChapter.pages?.getOrNull(index) ?: return
