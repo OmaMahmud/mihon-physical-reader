@@ -1,3 +1,11 @@
+# Mihon Physical v4.0
+
+This fork integrates the approved v4.0 physical page turn into Mihon's default native reader. Open any chapter; center taps show Mihon's existing controls. There is no separate demo or renderer selector.
+
+See [native integration, APK build and verification](PHYSICAL_READER_README.md). Installable universal APKs and Android verification screenshots are published by [Native Physical v4.0 Verification](https://github.com/OmaMahmud/mihon-physical-reader/actions/workflows/native-physical-v40.yml). The launcher label is **Mihon Physical**.
+
+---
+
 <div align="center">
 
 <a href="https://mihon.app">

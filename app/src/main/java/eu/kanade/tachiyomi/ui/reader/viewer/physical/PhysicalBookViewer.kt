@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.ui.reader.viewer.physical
 
+import android.util.Log
 import android.graphics.Bitmap
 import android.opengl.GLSurfaceView
 import android.view.GestureDetector
@@ -57,6 +58,7 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
     private val jobs = ConcurrentHashMap<Int, Job>()
     private var chapters: ViewerChapters? = null
     private var surface: BookSurface? = null
+    @Volatile
     private var generation = 0
     private var knownDimensions = emptyMap<Int, Pair<Int, Int>>()
     private var metadataReady = false
@@ -73,7 +75,7 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
             BookSurface().also {
                 surface = it
                 chapters?.currChapter?.takeIf { metadataReady }?.let { chapter ->
-                    it.command { setChapter(chapter.pages.orEmpty().size, chapter.requestedPage, knownDimensions) }
+                    it.bindChapter(chapter.pages.orEmpty().size, chapter.requestedPage, knownDimensions, generation)
                 }
             }
         }
@@ -142,6 +144,7 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
         val old = this.chapters
         this.chapters = chapters
         generation++
+        Log.i("NativePhysicalV40", "chapter=${chapters.currChapter.chapter.id} requested=${chapters.currChapter.requestedPage} generation=$generation")
         jobs.values.forEach { it.cancel() }
         jobs.clear()
         selectedIndex = chapters.currChapter.requestedPage
@@ -175,7 +178,7 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
             if (generation != token) return@launch
             knownDimensions = known
             metadataReady = true
-            surface?.command { setChapter(chapters.currChapter.pages.orEmpty().size, selectedIndex, known) }
+            surface?.bindChapter(chapters.currChapter.pages.orEmpty().size, selectedIndex, known, token)
         }
         old?.unref()
     }
@@ -250,6 +253,7 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Throwable) {
+                        Log.e("NativePhysicalV40", "Page $index in chapter ${chapter.chapter.id} failed", e)
                         page.status = Page.State.Error(e)
                         if (index == focusIndex) {
                             loading = false
@@ -290,6 +294,7 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
         private val pending = ConcurrentLinkedQueue<RenderCommand>()
         @Volatile
         private var disposed = false
+        private var activeChapterGeneration = -1
         private var downX = 0f
         private var downY = 0f
         private var scaling = false
@@ -299,10 +304,14 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
         private val renderer = PhysicalBookRenderer(
             activity,
             reversed,
-            requestPage = { index, required -> requestPage(index, required) },
+            requestPage = { index, required ->
+                if (activeChapterGeneration == generation) requestPage(index, required)
+            },
             selected = { index ->
+                val callbackGeneration = activeChapterGeneration
                 scope.launch {
-                    if (!metadataReady) return@launch
+                    if (!metadataReady || callbackGeneration != generation) return@launch
+                    Log.i("NativePhysicalV40", "selected=$index chapter=${chapters?.currChapter?.chapter?.id} generation=$generation")
                     selectedIndex = index
                     focusIndex = index
                     loading = false
@@ -312,7 +321,9 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
                 }
             },
             boundary = { forward ->
+                val callbackGeneration = activeChapterGeneration
                 scope.launch {
+                    if (callbackGeneration != generation) return@launch
                     if (forward) activity.viewModel.loadNextChapter() else activity.viewModel.loadPreviousChapter()
                 }
             },
@@ -369,6 +380,12 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
                 }
             })
             renderMode = RENDERMODE_WHEN_DIRTY
+        }
+        fun bindChapter(count: Int, initial: Int, known: Map<Int, Pair<Int, Int>>, token: Int) {
+            command {
+                activeChapterGeneration = token
+                setChapter(count, initial, known)
+            }
         }
         fun command(onDiscard: (() -> Unit)? = null, action: PhysicalBookRenderer.() -> Unit) {
             if (disposed) { onDiscard?.invoke(); return }

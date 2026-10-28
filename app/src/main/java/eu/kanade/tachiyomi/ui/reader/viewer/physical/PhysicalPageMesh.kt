@@ -48,45 +48,70 @@ internal object PhysicalPageMesh {
         val ny = if (dist > 1e-5) dy / dist else 0.0
         val midX = (gx + tx) * 0.5
         val midY = (gy + ty) * 0.5
-        fun signed(p: DoubleArray) = (p[0] - midX) * nx + (p[1] - midY) * ny
+        fun signed(x: Double, y: Double) = (x - midX) * nx + (y - midY) * ny
         val output = FloatArray(88 * 56 * 2 * 6 * 5)
+        val triangleX = DoubleArray(3)
+        val triangleY = DoubleArray(3)
+        val polygonX = DoubleArray(4)
+        val polygonY = DoubleArray(4)
+        val vertices = DoubleArray(20)
         var size = 0
-        fun emit(triangle: Array<DoubleArray>) {
-            val polygon = ArrayList<DoubleArray>(4)
-            triangle.indices.forEach { k ->
-                val a = triangle[k]
-                val b = triangle[(k + 1) % 3]
-                val sa = signed(a)
-                val sb = signed(b)
-                val ina = if (folded) sa <= 0 else sa >= 0
-                val inb = if (folded) sb <= 0 else sb >= 0
-                if (ina) polygon.add(a)
-                if (ina != inb) {
+        val lift = 0.075 * sin(PI * phase)
+        val lip = 0.042 * sin(PI * phase)
+        fun emit(ax: Double, ay: Double, bx: Double, by: Double, cx: Double, cy: Double) {
+            triangleX[0] = ax
+            triangleY[0] = ay
+            triangleX[1] = bx
+            triangleY[1] = by
+            triangleX[2] = cx
+            triangleY[2] = cy
+            var polygonSize = 0
+            for (k in 0..2) {
+                val next = (k + 1) % 3
+                val x = triangleX[k]
+                val y = triangleY[k]
+                val nextX = triangleX[next]
+                val nextY = triangleY[next]
+                val sa = signed(x, y)
+                val sb = signed(nextX, nextY)
+                val inside = if (folded) sa <= 0 else sa >= 0
+                val nextInside = if (folded) sb <= 0 else sb >= 0
+                if (inside) {
+                    polygonX[polygonSize] = x
+                    polygonY[polygonSize++] = y
+                }
+                if (inside != nextInside) {
                     val q = sa / (sa - sb)
-                    polygon.add(doubleArrayOf(a[0] + (b[0] - a[0]) * q, a[1] + (b[1] - a[1]) * q))
+                    polygonX[polygonSize] = x + (nextX - x) * q
+                    polygonY[polygonSize++] = y + (nextY - y) * q
                 }
             }
-            if (polygon.size < 3) return
-            val vertices = polygon.map { p ->
-                val u = p[0]
-                val v = p[1]
-                val s = signed(p)
+            if (polygonSize < 3) return
+            for (k in 0 until polygonSize) {
+                val u = polygonX[k]
+                val v = polygonY[k]
+                val s = signed(u, v)
                 var x = u
                 var y = v
                 var z = 0.012
                 if (dist > 1e-5 && folded) {
                     x = u - 2 * s * nx
                     y = v - 2 * s * ny
-                    z += 0.075 * sin(PI * phase) * exp(-abs(s) / 0.16)
+                    z += lift * exp(-abs(s) / 0.16)
                 }
-                if (dist > 1e-5) z += 0.042 * sin(PI * phase) * exp(-abs(s) / 0.025)
+                if (dist > 1e-5) z += lip * exp(-abs(s) / 0.025)
                 if (folded) z += 0.003
-                doubleArrayOf(x, y, z, if (back) 1 - u else u, v)
+                val base = k * 5
+                vertices[base] = x
+                vertices[base + 1] = y
+                vertices[base + 2] = z
+                vertices[base + 3] = if (back) 1 - u else u
+                vertices[base + 4] = v
             }
             fun vertex(i: Int) {
-                for (value in vertices[i]) output[size++] = value.toFloat()
+                for (j in 0..4) output[size++] = vertices[i * 5 + j].toFloat()
             }
-            for (k in 1 until vertices.lastIndex) {
+            for (k in 1 until polygonSize - 1) {
                 vertex(0)
                 vertex(if (back) k + 1 else k)
                 vertex(if (back) k else k + 1)
@@ -94,12 +119,12 @@ internal object PhysicalPageMesh {
         }
         for (i in 0 until 88) {
             for (j in 0 until 56) {
-                val a = doubleArrayOf(i / 88.0, j / 56.0)
-                val b = doubleArrayOf((i + 1) / 88.0, j / 56.0)
-                val c = doubleArrayOf(i / 88.0, (j + 1) / 56.0)
-                val d = doubleArrayOf((i + 1) / 88.0, (j + 1) / 56.0)
-                emit(arrayOf(a, b, c))
-                emit(arrayOf(c, b, d))
+                val x0 = i / 88.0
+                val x1 = (i + 1) / 88.0
+                val y0 = j / 56.0
+                val y1 = (j + 1) / 56.0
+                emit(x0, y0, x1, y0, x0, y1)
+                emit(x0, y1, x1, y0, x1, y1)
             }
         }
         return output.copyOf(size)

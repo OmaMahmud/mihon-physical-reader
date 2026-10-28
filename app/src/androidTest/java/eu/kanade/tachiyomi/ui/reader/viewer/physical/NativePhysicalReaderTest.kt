@@ -68,12 +68,7 @@ class NativePhysicalReaderTest {
 
     @Test
     fun onlineLoaderRetriesAndReadsTheCacheAfterNetworkDisconnects() {
-        val bitmap = Bitmap.createBitmap(64, 96, Bitmap.Config.ARGB_8888)
-        bitmap.eraseColor(Color.BLUE)
-        val output = ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
-        bitmap.recycle()
-        val bytes = output.toByteArray()
+        val bytes = instrumentation.context.assets.open("real_comic/page1.jpg").use { it.readBytes() }
         val server = ServerSocket(0)
         val requests = AtomicInteger(0)
         val failing = AtomicBoolean(true)
@@ -212,6 +207,8 @@ class NativePhysicalReaderTest {
             device.click(device.displayWidth / 2, device.displayHeight / 2)
             waitFor(scenario) { it.viewModel.state.value.menuVisible.also(before::set) }
             assertTrue("Center tap reveals Mihon's controls", before.get())
+            SystemClock.sleep(250)
+            capture("07-native-mihon-controls")
             device.click(device.displayWidth / 2, device.displayHeight / 2)
             waitFor(scenario) { !it.viewModel.state.value.menuVisible }
             holdCurlAndCapture(scenario)
@@ -221,10 +218,12 @@ class NativePhysicalReaderTest {
             swipe(true)
             waitFor(scenario) { it.viewModel.state.value.currentPage == 2 }
             repeat(5) {
-                swipe(true)
-                SystemClock.sleep(50)
+                device.swipe(device.displayWidth * 9 / 10, device.displayHeight * 3 / 5,
+                    device.displayWidth / 10, device.displayHeight * 3 / 5, 3)
+                SystemClock.sleep(40)
             }
             SystemClock.sleep(900)
+            waitFor(scenario) { it.viewModel.state.value.currentPage > 2 }
             scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE }
             waitFor(scenario) { it.resources.configuration.screenWidthDp > it.resources.configuration.screenHeightDp }
             SystemClock.sleep(1000)
@@ -254,6 +253,14 @@ class NativePhysicalReaderTest {
             scenario.onActivity { activity -> activity.lifecycleScopeForTestLoadNext() }
             waitFor(scenario) { it.viewModel.state.value.currentChapter?.chapter?.id != first.id && it.viewModel.state.value.currentPage == 1 }
             capture("04-native-next-chapter")
+        }
+        ActivityScenario.launch<ReaderActivity>(intent).use { reopened ->
+            waitFor(reopened) {
+                it.viewModel.state.value.currentChapter?.chapter?.id == first.id &&
+                    it.viewModel.state.value.currentPage > 1 && findSurface(it.window.decorView) != null
+            }
+            SystemClock.sleep(500)
+            capture("08-native-reopened-progress")
         }
         val saved = runBlocking { graph.chapterRepository.getChapterById(first.id) }
         assertNotNull(saved)
@@ -318,6 +325,12 @@ class NativePhysicalReaderTest {
             if (ready.get()) return
             SystemClock.sleep(200)
         }
+        scenario.onActivity {
+            Log.e("NativePhysicalTest", "Timed out: chapter=${it.viewModel.state.value.currentChapter?.chapter?.id} " +
+                "page=${it.viewModel.state.value.currentPage} requested=${it.viewModel.state.value.currentChapter?.requestedPage} " +
+                "loading=${it.viewModel.state.value.isLoadingAdjacentChapter}")
+        }
+        capture("99-native-failed-condition")
         throw AssertionError("Native reader condition timed out; inspect logcat and screenshots")
     }
 
@@ -332,10 +345,13 @@ class NativePhysicalReaderTest {
         )
         File(proof, "$name.jpg").outputStream().use { small.compress(Bitmap.CompressFormat.JPEG, 88, it) }
         val privateImage = File(proof, "$name.jpg")
-        val command = "mkdir -p /sdcard/Download/native-physical-proof; " +
-            "cp '" + privateImage.absolutePath + "' /sdcard/Download/native-physical-proof/$name.jpg"
-        ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand(command)).use {
-            it.readBytes()
+        listOf(
+            "mkdir -p /sdcard/Download/native-physical-proof",
+            "cp ${privateImage.absolutePath} /sdcard/Download/native-physical-proof/$name.jpg",
+        ).forEach { command ->
+            ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand(command)).use {
+                it.readBytes()
+            }
         }
         if (small !== screenshot) small.recycle()
         screenshot.recycle()
@@ -359,6 +375,12 @@ class NativePhysicalReaderTest {
     private fun makeChapter(file: File) {
         ZipOutputStream(file.outputStream()).use { zip ->
             repeat(9) { index ->
+                if (index < 3) {
+                    zip.putNextEntry(ZipEntry("${index.toString().padStart(3, '0')}.jpg"))
+                    instrumentation.context.assets.open("real_comic/page${index + 1}.jpg").use { it.copyTo(zip) }
+                    zip.closeEntry()
+                    return@repeat
+                }
                 val wide = index == 3 || index == 7
                 val bitmap = Bitmap.createBitmap(
                     if (wide) 1600 else 720,

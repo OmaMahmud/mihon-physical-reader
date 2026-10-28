@@ -1,7 +1,7 @@
 name: Native Physical v4.0 Verification
 on:
   push:
-    branches: [native-physical-v40]
+    branches: [main, native-physical-v40]
   workflow_dispatch:
 permissions:
   contents: read
@@ -20,6 +20,17 @@ jobs:
           distribution: temurin
           java-version-file: .github/.java-version
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+      - name: Restore persistent signing identity when configured
+        env:
+          NATIVE_KEYSTORE: ${{ secrets.MIHON_NATIVE_DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$NATIVE_KEYSTORE" ]; then
+            mkdir -p "$HOME/.android"
+            printf '%s' "$NATIVE_KEYSTORE" | base64 --decode > "$HOME/.android/debug.keystore"
+            chmod 600 "$HOME/.android/debug.keystore"
+          fi
       - name: Format native sources
         run: |
           ./gradlew spotlessApply
@@ -27,6 +38,12 @@ jobs:
           echo NATIVE_FORMAT_BEGIN
           cat native-format.patch
           echo NATIVE_FORMAT_END
+      - name: Fetch licensed comic pages for instrumentation only
+        run: |
+          mkdir -p app/src/androidTest/assets/real_comic
+          for page in 1 2 3; do
+            curl --fail --location --retry 3 --max-time 90 "https://www.peppercarrot.com/0_sources/ep01_Potion-of-Flight/low-res/en_Pepper-and-Carrot_by-David-Revoy_E01P0${page}.jpg" -o "app/src/androidTest/assets/real_comic/page${page}.jpg"
+          done
       - name: Test approved mesh and build native APK
         run: ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace
       - name: Preserve signing key for private recovery
@@ -59,7 +76,7 @@ jobs:
       - name: Record visual proof
         if: always()
         run: |
-          for image in $(find app/build/native-proof -name '*.jpg' 2>/dev/null); do
+          for image in $(find app/build/native-proof -type f -name '*.jpg' 2>/dev/null); do
             echo NATIVE_IMAGE_BEGIN $(basename "$image")
             base64 -w76 "$image"
             echo NATIVE_IMAGE_END

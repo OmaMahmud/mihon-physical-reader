@@ -10,7 +10,7 @@ adb pull /sdcard/Download/native-physical-proof app/build/native-proof || true
 adb logcat -d > app/build/native-proof/logcat.txt
 find app/build/outputs/androidTest-results -name '*.xml' -type f -print -exec cat {} \; || true
 grep -E 'AndroidRuntime|TestRunner|NativePhysical|FATAL|Fatal signal|crash_dump|SIGSEGV|libc|DEBUG|lmkd|java.lang|eu.kanade' app/build/native-proof/logcat.txt | tail -n 500 || true
-if ! find app/build/native-proof -name '02-native-held-page-curl.jpg' | grep -q .; then
+if ! find app/build/native-proof -type f -name '02-native-held-page-curl.jpg' | grep -q .; then
   echo 'Native held-curl visual proof was not produced.'
   result=1
 fi
