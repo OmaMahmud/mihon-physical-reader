@@ -144,7 +144,11 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
         val old = this.chapters
         this.chapters = chapters
         generation++
-        Log.i("NativePhysicalV40", "chapter=${chapters.currChapter.chapter.id} requested=${chapters.currChapter.requestedPage} generation=$generation")
+        Log.i(
+            "NativePhysicalV40",
+            "chapter=${chapters.currChapter.chapter.id} " +
+                "requested=${chapters.currChapter.requestedPage} generation=$generation",
+        )
         jobs.values.forEach { it.cancel() }
         jobs.clear()
         selectedIndex = chapters.currChapter.requestedPage
@@ -311,7 +315,10 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
                 val callbackGeneration = activeChapterGeneration
                 scope.launch {
                     if (!metadataReady || callbackGeneration != generation) return@launch
-                    Log.i("NativePhysicalV40", "selected=$index chapter=${chapters?.currChapter?.chapter?.id} generation=$generation")
+                    Log.i(
+                        "NativePhysicalV40",
+                        "selected=$index chapter=${chapters?.currChapter?.chapter?.id} generation=$generation",
+                    )
                     selectedIndex = index
                     focusIndex = index
                     loading = false

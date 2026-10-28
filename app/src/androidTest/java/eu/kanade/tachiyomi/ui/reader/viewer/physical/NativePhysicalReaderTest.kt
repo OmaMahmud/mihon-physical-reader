@@ -327,7 +327,8 @@ class NativePhysicalReaderTest {
         }
         scenario.onActivity {
             Log.e("NativePhysicalTest", "Timed out: chapter=${it.viewModel.state.value.currentChapter?.chapter?.id} " +
-                "page=${it.viewModel.state.value.currentPage} requested=${it.viewModel.state.value.currentChapter?.requestedPage} " +
+                "page=${it.viewModel.state.value.currentPage} " +
+                "requested=${it.viewModel.state.value.currentChapter?.requestedPage} " +
                 "loading=${it.viewModel.state.value.isLoadingAdjacentChapter}")
         }
         capture("99-native-failed-condition")
