@@ -13,3 +13,11 @@ GitHub's website **does not automatically extract ZIP uploads**. On a PC, extrac
 After the files are committed on `main`, open your repository > Actions > Build Physical Reader Test APK > latest successful run > Artifacts > `mihon-physical-reader-test-apk`. Extract the downloaded artifact ZIP to find the APK.
 
 The debug APK uses a different application ID (`app.mihon.physicaldemo`) so it can install alongside standard Mihon. GitHub Actions build success is not guaranteed until dependencies are fetched and compilation is checked.
+
+## Integration checklist
+
+- [ ] Replace synthetic pages with real ReaderPage streams from the active chapter.
+- [ ] Connect page turns to Mihon's reading progress and chapter navigation.
+- [ ] Offer Physical Book and Classic Mihon as selectable modes; preserve Classic as fallback.
+- [ ] Test extension repository browsing, chapter download, and offline reading.
+- [ ] Verify a real chapter in the APK before calling Phase 1 or Phase 2 complete.
