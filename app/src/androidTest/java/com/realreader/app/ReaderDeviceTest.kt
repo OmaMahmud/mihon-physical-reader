@@ -56,7 +56,7 @@ class ReaderDeviceTest {
    val ui=instrumentation.uiAutomation
    ui.executeShellCommand("mkdir -p /sdcard/Download/real-reader-proof").let {android.os.ParcelFileDescriptor.AutoCloseInputStream(it).use{stream->stream.readBytes()}}
    val image=ui.takeScreenshot()
-   val pipes=ui.executeShellCommandRw("cat > /sdcard/Download/real-reader-proof/$name.png")
+   val pipes=ui.executeShellCommandRw("dd of=/sdcard/Download/real-reader-proof/$name.png")
    android.os.ParcelFileDescriptor.AutoCloseOutputStream(pipes[1]).use{assertTrue(image.compress(Bitmap.CompressFormat.PNG,100,it))}
    android.os.ParcelFileDescriptor.AutoCloseInputStream(pipes[0]).use{it.readBytes()};image.recycle()
   }
