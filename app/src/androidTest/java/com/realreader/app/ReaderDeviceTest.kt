@@ -52,7 +52,14 @@ class ReaderDeviceTest {
   compose.onNodeWithText("Start Reading").performClick()
   compose.waitUntil(30000) {store.db.all().first{it.name==file.name}.pages==3}
   Thread.sleep(500)
-  fun proof(name:String){val dir=File(context.getExternalFilesDir(null),"proof");dir.mkdirs();val image=instrumentation.uiAutomation.takeScreenshot();val output=File(dir,"$name.png");output.outputStream().use{image.compress(Bitmap.CompressFormat.PNG,100,it)};image.recycle();instrumentation.uiAutomation.executeShellCommand("mkdir -p /sdcard/Download/real-reader-proof && cp ${output.absolutePath} /sdcard/Download/real-reader-proof/$name.png").use {android.os.ParcelFileDescriptor.AutoCloseInputStream(it).readBytes()}}
+  fun proof(name:String){
+   val ui=instrumentation.uiAutomation
+   ui.executeShellCommand("mkdir -p /sdcard/Download/real-reader-proof").let {android.os.ParcelFileDescriptor.AutoCloseInputStream(it).use{stream->stream.readBytes()}}
+   val image=ui.takeScreenshot()
+   val pipes=ui.executeShellCommandRw("cat > /sdcard/Download/real-reader-proof/$name.png")
+   android.os.ParcelFileDescriptor.AutoCloseOutputStream(pipes[1]).use{assertTrue(image.compress(Bitmap.CompressFormat.PNG,100,it))}
+   android.os.ParcelFileDescriptor.AutoCloseInputStream(pipes[0]).use{it.readBytes()};image.recycle()
+  }
   proof("reader-single")
   val w=compose.activity.window.decorView.width.toFloat();val h=compose.activity.window.decorView.height.toFloat();val now=android.os.SystemClock.uptimeMillis()
   instrumentation.sendPointerSync(android.view.MotionEvent.obtain(now,now,android.view.MotionEvent.ACTION_DOWN,w*.9f,h*.5f,0))
