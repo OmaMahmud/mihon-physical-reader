@@ -39,7 +39,7 @@
         android:enableOnBackInvokedCallback="true"
         android:hardwareAccelerated="true"
         android:icon="@mipmap/ic_launcher"
-        android:label="@string/app_name"
+        android:label="Mihon Physical"
         android:largeHeap="true"
         android:localeConfig="@xml/locales_config"
         android:networkSecurityConfig="@xml/network_security_config"
@@ -150,6 +150,11 @@
                 android:name="android.app.searchable"
                 android:resource="@xml/searchable" />
         </activity>
+
+        <activity
+            android:name=".ui.reader.PhysicalBookDemoActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize" />
         <activity
             android:name=".ui.reader.ReaderActivity"
             android:exported="false"

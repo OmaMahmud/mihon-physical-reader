@@ -35,7 +35,7 @@ android {
     namespace = "eu.kanade.tachiyomi"
 
     defaultConfig {
-        applicationId = "app.mihon.physicaldemo"
+        applicationId = "app.mihon.physicalreader"
 
         versionCode = 41
         versionName = "4.0-native-physical"

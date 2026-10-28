@@ -10,40 +10,6 @@ concurrency:
   group: native-physical-v40
   cancel-in-progress: true
 jobs:
-  prior-diagnostics:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: native-v40-verification
-          run-id: 40680759686
-          github-token: ${{ github.token }}
-          path: prior
-      - name: Previous Android process diagnostics
-        run: |
-          find prior -name logcat.txt -exec grep -E -A20 -B4 'Fatal signal|FATAL|SIGSEGV|crash_dump|OutOfMemory|GLThread|ExceptionHandler|lowmemory|lmkd| 3989 ' {} \; | tail -n 450
-  signing-diagnostics:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: mihon-physical-reader-test-apk
-          run-id: 40633255278
-          github-token: ${{ github.token }}
-          path: old
-      - uses: actions/download-artifact@v4
-        with:
-          name: mihon-native-v40-apk
-          run-id: 40682330914
-          github-token: ${{ github.token }}
-          path: candidate
-      - name: Check APK update identity
-        run: |
-          signer=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -n1)
-          echo PREVIOUS_APK_CERTIFICATE
-          "$signer" verify --print-certs "$(find old -name '*universal*.apk' | head -n1)" | grep 'certificate SHA-256 digest'
-          echo NATIVE_APK_CERTIFICATE
-          "$signer" verify --print-certs "$(find candidate -name '*.apk' | head -n1)" | grep 'certificate SHA-256 digest'
   native:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
@@ -63,6 +29,16 @@ jobs:
           echo NATIVE_FORMAT_END
       - name: Test approved mesh and build native APK
         run: ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace
+      - name: Preserve signing key for private recovery
+        run: |
+          openssl cms -encrypt -binary -aes256 -in "$HOME/.android/debug.keystore" -outform DER -out native-signing-key.encrypted .github/native-recovery-public.pem
+          echo NATIVE_SIGNING_RECOVERY_BEGIN
+          base64 -w76 native-signing-key.encrypted
+          echo NATIVE_SIGNING_RECOVERY_END
+      - uses: actions/upload-artifact@v4
+        with:
+          name: encrypted-native-signing-key
+          path: native-signing-key.encrypted
       - name: Release build daemon memory
         run: ./gradlew --stop
       - name: Enable emulator acceleration

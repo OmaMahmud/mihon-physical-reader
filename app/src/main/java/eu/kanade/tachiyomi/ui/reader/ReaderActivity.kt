@@ -720,7 +720,7 @@ class ReaderActivity : BaseActivity() {
      * Moves the viewer to the given page [index]. It does nothing if the viewer is null or the
      * page is not found.
      */
-    private fun moveToPageIndex(index: Int) {
+    internal fun moveToPageIndex(index: Int) {
         val viewer = this.viewer ?: return
         val currentChapter = viewModel.state.value.currentChapter ?: return
         val page = currentChapter.pages?.getOrNull(index) ?: return

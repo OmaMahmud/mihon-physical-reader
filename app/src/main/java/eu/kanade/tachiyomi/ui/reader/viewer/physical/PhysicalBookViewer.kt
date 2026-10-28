@@ -43,6 +43,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import tachiyomi.presentation.core.screens.LoadingScreen
+import java.util.concurrent.ConcurrentLinkedQueue
+import javax.microedition.khronos.egl.EGLConfig
+import javax.microedition.khronos.opengles.GL10
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.hypot
 import kotlin.math.max
@@ -77,7 +80,10 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
         DisposableEffect(view, lifecycle) {
             val observer = LifecycleEventObserver { _, event ->
                 when (event) {
-                    Lifecycle.Event.ON_PAUSE -> view.onPause()
+                    Lifecycle.Event.ON_PAUSE -> {
+                        jobs.values.forEach { it.cancel() }
+                        view.onPause()
+                    }
                     Lifecycle.Event.ON_RESUME -> {
                         view.onResume()
                         view.requestRender()
@@ -88,7 +94,7 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
             lifecycle.addObserver(observer)
             onDispose {
                 lifecycle.removeObserver(observer)
-                view.command { release() }
+                view.dispose()
                 view.onPause()
                 surface = null
             }
@@ -229,7 +235,7 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
                             decoded.first.recycle()
                             return@launch
                         }
-                        surface?.command {
+                        surface?.command(onDiscard = { decoded.first.recycle() }) {
                             if (token == generation) {
                                 putPage(index, decoded.first, decoded.second, decoded.third)
                             } else {
@@ -275,7 +281,15 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
         chapters = null
     }
 
+    private class RenderCommand(
+        val action: PhysicalBookRenderer.() -> Unit,
+        val discard: (() -> Unit)?,
+    )
+
     private inner class BookSurface : GLSurfaceView(activity) {
+        private val pending = ConcurrentLinkedQueue<RenderCommand>()
+        @Volatile
+        private var disposed = false
         private var downX = 0f
         private var downY = 0f
         private var scaling = false
@@ -340,12 +354,35 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
             setEGLContextClientVersion(2)
             setEGLConfigChooser(8, 8, 8, 8, 16, 0)
             preserveEGLContextOnPause = true
-            setRenderer(renderer)
+            setRenderer(object : GLSurfaceView.Renderer {
+                override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) { renderer.onSurfaceCreated(gl, config) }
+                override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
+                    renderer.onSurfaceChanged(gl, width, height)
+                }
+                override fun onDrawFrame(gl: GL10?) {
+                    if (disposed) return
+                    while (true) {
+                        val command = pending.poll() ?: break
+                        command.action(renderer)
+                    }
+                    renderer.onDrawFrame(gl)
+                }
+            })
             renderMode = RENDERMODE_WHEN_DIRTY
         }
-        fun command(action: PhysicalBookRenderer.() -> Unit) {
-            queueEvent { renderer.action() }
+        fun command(onDiscard: (() -> Unit)? = null, action: PhysicalBookRenderer.() -> Unit) {
+            if (disposed) { onDiscard?.invoke(); return }
+            pending.add(RenderCommand(action, onDiscard))
             requestRender()
+        }
+        fun dispose() {
+            disposed = true
+            while (true) { (pending.poll() ?: break).discard?.invoke() }
+            queueEvent {
+                if (android.opengl.EGL14.eglGetCurrentContext() != android.opengl.EGL14.EGL_NO_CONTEXT) {
+                    renderer.release()
+                }
+            }
         }
         override fun onTouchEvent(event: MotionEvent): Boolean {
             if (!metadataReady) return true

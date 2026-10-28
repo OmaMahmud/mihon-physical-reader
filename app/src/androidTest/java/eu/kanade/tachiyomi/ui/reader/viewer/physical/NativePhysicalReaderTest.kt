@@ -192,6 +192,9 @@ class NativePhysicalReaderTest {
         SystemClock.sleep(500)
         val intent = ReaderActivity.newIntent(context, manga.id, first.id)
         ActivityScenario.launch<ReaderActivity>(intent).use { scenario ->
+            scenario.moveToState(Lifecycle.State.CREATED)
+            SystemClock.sleep(250)
+            scenario.moveToState(Lifecycle.State.RESUMED)
             waitFor(scenario) { it.viewModel.state.value.currentPage == 1 && findSurface(it.window.decorView) != null }
             scenario.onActivity {
                 val surface = checkNotNull(findSurface(it.window.decorView))
@@ -226,6 +229,20 @@ class NativePhysicalReaderTest {
             waitFor(scenario) { it.resources.configuration.screenWidthDp > it.resources.configuration.screenHeightDp }
             SystemClock.sleep(1000)
             capture("03-native-book-layout")
+            scenario.onActivity { it.moveToPageIndex(3) }
+            waitFor(scenario) { it.viewModel.state.value.currentPage == 4 }
+            SystemClock.sleep(600)
+            capture("05-native-double-page-spread")
+            swipe(false)
+            waitFor(scenario) { it.viewModel.state.value.currentPage < 4 }
+            swipe(true)
+            waitFor(scenario) { it.viewModel.state.value.currentPage == 4 }
+            scenario.onActivity { it.viewModel.setMangaReadingMode(ReadingMode.RIGHT_TO_LEFT) }
+            waitFor(scenario) { it.viewModel.getMangaReadingMode() == ReadingMode.RIGHT_TO_LEFT.flagValue }
+            SystemClock.sleep(1000)
+            swipe(false)
+            waitFor(scenario) { it.viewModel.state.value.currentPage > 4 }
+            capture("06-native-right-to-left")
             assertFalse("No webpage after rotation", containsWebViewOnUi(scenario))
             scenario.onActivity { it.viewModel.saveHistory() }
             scenario.moveToState(Lifecycle.State.CREATED)
