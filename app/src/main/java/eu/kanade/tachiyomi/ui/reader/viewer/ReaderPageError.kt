@@ -25,12 +25,13 @@ fun ReaderPageError(
     sourceId: Long?,
     modifier: Modifier = Modifier,
     onButtonPressChange: ((pressed: Boolean) -> Unit)? = null,
+    onRetry: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val imageUrl = page.imageUrl?.takeIf { it.startsWith("http", ignoreCase = true) }
     ReaderError(
         message = with(context) { error?.formattedMessage },
-        onRetry = { page.chapter.pageLoader?.retryPage(page) },
+        onRetry = onRetry ?: { page.chapter.pageLoader?.retryPage(page) },
         onOpenInWebView = imageUrl?.let {
             { context.startActivity(WebViewActivity.newIntent(context, it, sourceId)) }
         },

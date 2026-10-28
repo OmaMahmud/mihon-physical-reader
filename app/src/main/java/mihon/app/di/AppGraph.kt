@@ -116,6 +116,10 @@ interface AppGraph : ViewModelGraph {
     val networkHelper: NetworkHelper
     val javaScriptEngine: JavaScriptEngine
 
+    val mangaRepository: tachiyomi.domain.manga.repository.MangaRepository
+    val chapterRepository: tachiyomi.domain.chapter.repository.ChapterRepository
+    val historyRepository: tachiyomi.domain.history.repository.HistoryRepository
+
     val getFavorites: GetFavorites
     val getCategories: GetCategories
     val resetViewerFlags: ResetViewerFlags

@@ -104,7 +104,9 @@ internal class PhysicalBookRenderer(
     private var backing = 0
     private var notice = 0
     private var projection = FloatArray(16)
-    private var buffer: FloatBuffer = ByteBuffer.allocateDirect(1_000_000 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
+    private var buffer: FloatBuffer = ByteBuffer.allocateDirect(
+        1_000_000 * 4,
+    ).order(ByteOrder.nativeOrder()).asFloatBuffer()
     private val uniforms = mutableMapOf<String, Int>()
     private var progress = 0.0
     private var grabY = 0.5
@@ -196,10 +198,11 @@ internal class PhysicalBookRenderer(
         glViewport(0, 0, width, height)
     }
 
-    fun setChapter(pageCount: Int, initial: Int) {
+    fun setChapter(pageCount: Int, initial: Int, known: Map<Int, Pair<Int, Int>> = emptyMap()) {
         textures.values.forEach { glDeleteTextures(1, intArrayOf(it.id), 0) }
         textures.clear()
         dimensions.clear()
+        dimensions.putAll(known)
         count = pageCount
         source = initial.coerceIn(0, max(0, count - 1))
         lastReported = -1
@@ -221,7 +224,12 @@ internal class PhysicalBookRenderer(
         bitmap.recycle()
         dimensions[source] = originalWidth to originalHeight
         if (!drag && animationDuration == 0.0) rebuild(currentSource())
-        pendingSeek?.let { if (textures.containsKey(it)) { pendingSeek = null; seek(it) } }
+        pendingSeek?.let {
+            if (textures.containsKey(it)) {
+                pendingSeek = null
+                seek(it)
+            }
+        }
         if (pendingDirection != 0 && readyToTurn(pendingDirection)) {
             val pending = pendingDirection
             pendingDirection = 0
@@ -256,18 +264,38 @@ internal class PhysicalBookRenderer(
         }
         faces = result
         val face = faces.indexOfFirst { it.source == keep }.coerceAtLeast(0)
-        index = if (book) { if (keep == 0) -1 else if (face % 2 == 1) face else face - 1 } else face
+        index = if (book) {
+            if (keep == 0) {
+                -1
+            } else if (face % 2 == 1) {
+                face
+            } else {
+                face - 1
+            }
+        } else {
+            face
+        }
     }
 
     private fun currentSource(): Int = faces.getOrNull(max(0, index))?.source?.takeIf { it >= 0 } ?: source
     private fun canTurn(dir: Int): Boolean = if (book) {
-        if (dir == 1) { if (index == -1) faces.size > 2 else index < faces.lastIndex } else index != -1
-    } else if (dir == 1) index + 1 < faces.size else index > 0
+        if (dir == 1) {
+            if (index == -1) faces.size > 2 else index < faces.lastIndex
+        } else {
+            index != -1
+        }
+    } else if (dir == 1) {
+        index + 1 < faces.size
+    } else {
+        index > 0
+    }
 
     private fun readyToTurn(dir: Int): Boolean {
         val wanted = if (book) {
             if (dir == 1) listOf(index + 1, index + 2, index + 3) else listOf(index - 2, index - 1)
-        } else listOf(index + dir)
+        } else {
+            listOf(index + dir)
+        }
         var ready = true
         wanted.forEach { faceIndex ->
             val face = faces.getOrNull(faceIndex) ?: return@forEach
@@ -281,7 +309,11 @@ internal class PhysicalBookRenderer(
 
     fun seek(page: Int) {
         val next = page.coerceIn(0, max(0, count - 1))
-        if (!textures.containsKey(next)) { pendingSeek = next; requestPage(next, true); return }
+        if (!textures.containsKey(next)) {
+            pendingSeek = next
+            requestPage(next, true)
+            return
+        }
         animationDuration = 0.0
         progress = 0.0
         drag = false
@@ -297,11 +329,25 @@ internal class PhysicalBookRenderer(
     fun flip(dir: Int) {
         if (animationDuration > 0 || drag) return
         if (!book && faces.getOrNull(index)?.wide == true) {
-            if (dir == 1 && pan < 1) { pan = 1.0; nextFrame(); return }
-            if (dir == -1 && pan > 0) { pan = 0.0; nextFrame(); return }
+            if (dir == 1 && pan < 1) {
+                pan = 1.0
+                nextFrame()
+                return
+            }
+            if (dir == -1 && pan > 0) {
+                pan = 0.0
+                nextFrame()
+                return
+            }
         }
-        if (!canTurn(dir)) { boundary(dir == 1); return }
-        if (!readyToTurn(dir)) { pendingDirection = dir; return }
+        if (!canTurn(dir)) {
+            boundary(dir == 1)
+            return
+        }
+        if (!readyToTurn(dir)) {
+            pendingDirection = dir
+            return
+        }
         direction = dir
         grabY = 0.5
         moveY = 0.5
@@ -351,9 +397,18 @@ internal class PhysicalBookRenderer(
             val dx = x - spreadLastX
             spreadLastX = x
             pan = (pan - dx * 2).coerceIn(0.0, 1.0)
-            val edge = if (pan >= 0.999 && dx < 0) 1 else if (pan <= 0.001 && dx > 0) -1 else 0
+            val edge = if (pan >= 0.999 && dx < 0) {
+                1
+            } else if (pan <= 0.001 && dx > 0) {
+                -1
+            } else {
+                0
+            }
             if (edge != 0 && canTurn(edge)) {
-                if (edgeDirection != edge) { edgeDirection = edge; edgePull = 0.0 }
+                if (edgeDirection != edge) {
+                    edgeDirection = edge
+                    edgePull = 0.0
+                }
                 edgePull += abs(dx)
                 if (edgePull > 0.055) {
                     direction = edge
@@ -363,7 +418,10 @@ internal class PhysicalBookRenderer(
                     spreadTurn = true
                     progress = 0.015
                 }
-            } else { edgeDirection = 0; edgePull = 0.0 }
+            } else {
+                edgeDirection = 0
+                edgePull = 0.0
+            }
             return
         }
         moveY = 1 - y
@@ -374,7 +432,10 @@ internal class PhysicalBookRenderer(
     fun up(rawX: Double, cancel: Boolean, tapped: Boolean) {
         if (!drag) return
         drag = false
-        if (tapped || cancel) { animate(0.0); return }
+        if (tapped || cancel) {
+            animate(0.0)
+            return
+        }
         if (!book && faces.getOrNull(index)?.wide == true && !spreadTurn) return
         val x = if (reversed) 1 - rawX else rawX
         val speed = if (direction == 1) -velocity else velocity
@@ -387,7 +448,10 @@ internal class PhysicalBookRenderer(
         zoom = value.coerceIn(1f, 4f)
         drag = false
         progress = 0.0
-        if (zoom == 1f) { panX = 0f; panY = 0f }
+        if (zoom == 1f) {
+            panX = 0f
+            panY = 0f
+        }
         clampPan()
     }
     fun zoomBy(factor: Float) = setZoom(zoom * factor)
@@ -411,7 +475,10 @@ internal class PhysicalBookRenderer(
     override fun onDrawFrame(gl: GL10?) {
         if (count == 0 || faces.isEmpty()) return
         val current = currentSource()
-        if (!textures.containsKey(current)) { requestPage(current, true); return }
+        if (!textures.containsKey(current)) {
+            requestPage(current, true)
+            return
+        }
         if (animationDuration > 0) {
             val a = ((SystemClock.uptimeMillis() - animationStart) / animationDuration).coerceIn(0.0, 1.0)
             val ease = a * a * (3 - 2 * a)
@@ -420,10 +487,25 @@ internal class PhysicalBookRenderer(
             if (a >= 1) {
                 if (animationTo == 1.0) {
                     index = if (book) {
-                        if (direction == 1) { if (index == -1) 1 else min(faces.lastIndex, index + 2) }
-                        else if (index == faces.lastIndex) faces.size - 3 else if (index == 1) -1 else index - 2
-                    } else (index + direction).coerceIn(0, faces.lastIndex)
-                    pan = if (direction == 1) 0.0 else if (faces.getOrNull(index)?.wide == true) 1.0 else 0.0
+                        if (direction == 1) {
+                            if (index == -1) 1 else min(faces.lastIndex, index + 2)
+                        } else if (index == faces.lastIndex) {
+                            faces.size - 3
+                        } else if (index == 1) {
+                            -1
+                        } else {
+                            index - 2
+                        }
+                    } else {
+                        (index + direction).coerceIn(0, faces.lastIndex)
+                    }
+                    pan = if (direction == 1) {
+                        0.0
+                    } else if (faces.getOrNull(index)?.wide == true) {
+                        1.0
+                    } else {
+                        0.0
+                    }
                     zoom = 1f
                     panX = 0f
                     panY = 0f
@@ -453,15 +535,28 @@ internal class PhysicalBookRenderer(
         viewSh = height / fit
         val sw = viewSw / zoom
         val sh = viewSh / zoom
-        android.opengl.Matrix.orthoM(projection, 0, -sw / 2 + panX, sw / 2 + panX, -sh / 2 + panY, sh / 2 + panY, -3f, 3f)
+        android.opengl.Matrix.orthoM(
+            projection,
+            0,
+            -sw / 2 + panX,
+            sw / 2 + panX,
+            -sh / 2 + panY,
+            sh / 2 + panY,
+            -3f,
+            3f,
+        )
         glUniformMatrix4fv(u("uProj"), 1, false, projection, 0)
         glClear(GL_COLOR_BUFFER_BIT or GL_DEPTH_BUFFER_BIT)
         drawBook()
         if (!drag && animationDuration == 0.0) {
             val selectedSource = currentSource()
-            if (selectedSource != lastReported) { lastReported = selectedSource; selected(selectedSource) }
+            if (selectedSource != lastReported) {
+                lastReported = selectedSource
+                selected(selectedSource)
+            }
             val retained = (selectedSource - 3..selectedSource + 4).filter { it in 0 until count }.toSet()
-            retained.forEach { if (!textures.containsKey(it)) requestPage(it, false) }
+            listOf(1, -1, 2, -2, 3, -3, 4).map { selectedSource + it }.filter { it in retained }
+                .forEach { if (!textures.containsKey(it)) requestPage(it, false) }
             val stale = textures.keys.filter { it !in retained }
             stale.forEach { key -> textures.remove(key)?.let { glDeleteTextures(1, intArrayOf(it.id), 0) } }
         }
@@ -494,19 +589,52 @@ internal class PhysicalBookRenderer(
         uvMapped: Boolean = false,
     ) {
         if (vertices.isEmpty() || face == null) return
-        val texture = if (face.source == -1) notice else if (face.source == -2) backing else textures[face.source]?.id ?: return
+        val texture = if (face.source ==
+            -1
+        ) {
+            notice
+        } else if (face.source == -2) {
+            backing
+        } else {
+            textures[face.source]?.id ?: return
+        }
         val crop = if (face.side >= 0) 0.5f else 1f
         glUniform2f(u("uCrop"), if (face.side >= 0) face.side * 0.5f else 0f, crop)
         scalar("uGray", if (gray) 1f else 0f)
         scalar("uShade", light)
         scalar("uSpineShadow", if (book && shadow == null) 1f else 0f)
         val local = if (direction == -1) 2f else 1f
-        scalar("uSpineLocal", if (book && turning) { if (reverse) 3f - local else local } else 0f)
+        scalar(
+            "uSpineLocal",
+            if (book && turning) {
+                if (reverse) 3f - local else local
+            } else {
+                0f
+            },
+        )
         scalar("uShadowPass", if (shadow != null) 1f else 0f)
-        glUniform4f(u("uShadow"), shadow?.get(0) ?: 0f, shadow?.get(1) ?: 0f, shadow?.get(2) ?: 0f, if (shadow != null) 1f else 0f)
+        glUniform4f(
+            u("uShadow"),
+            shadow?.get(0) ?: 0f,
+            shadow?.get(1) ?: 0f,
+            shadow?.get(2) ?: 0f,
+            if (shadow !=
+                null
+            ) {
+                1f
+            } else {
+                0f
+            },
+        )
         if (mesh) {
             val sx = if (direction == 1) 1f else -1f
-            val offset = if (book) 0f else if (direction == 1) -0.5f else 0.5f
+            val offset = if (book) {
+                0f
+            } else if (direction == 1) {
+                -0.5f
+            } else {
+                0.5f
+            }
             glUniform4f(u("uModel"), sx, offset, ph, -ph / 2)
             scalar("uReverseUv", if (direction == -1 && !uvMapped) 1f else 0f)
         } else {
@@ -515,7 +643,12 @@ internal class PhysicalBookRenderer(
         }
         scalar("uZOffset", zOffset)
         glBindTexture(GL_TEXTURE_2D, texture)
-        if (buffer.capacity() < vertices.size) buffer = ByteBuffer.allocateDirect(vertices.size * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
+        if (buffer.capacity() <
+            vertices.size
+        ) {
+            buffer =
+                ByteBuffer.allocateDirect(vertices.size * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
+        }
         buffer.clear()
         buffer.put(vertices)
         buffer.position(0)
@@ -531,7 +664,11 @@ internal class PhysicalBookRenderer(
 
     private fun page(n: Int, left: Float, right: Float, z: Float = -0.07f) {
         val face = faces.getOrNull(n) ?: return
-        val offset = if (!book && face.wide) { if (direction == -1) 0.5f else 0f } else 0f
+        val offset = if (!book && face.wide) {
+            if (direction == -1) 0.5f else 0f
+        } else {
+            0f
+        }
         draw(rect(left, -ph / 2, right, ph / 2, z, offset, if (!book && face.wide) offset + 0.5f else 1f), face)
     }
 
@@ -542,20 +679,37 @@ internal class PhysicalBookRenderer(
         glDepthMask(false)
         val sign = if (book && direction == -1) -1f else 1f
         val layers = arrayOf(
-            floatArrayOf(0.094f, 0.095f, 1f, -0.0633f), floatArrayOf(0.072f, 0.15f, 1f, -0.0636f),
-            floatArrayOf(0.050f, 0.205f, 1f, -0.0639f), floatArrayOf(0.012f, 0.33f, 0.30f, -0.0627f),
+            floatArrayOf(0.094f, 0.095f, 1f, -0.0633f),
+            floatArrayOf(0.072f, 0.15f, 1f, -0.0636f),
+            floatArrayOf(0.050f, 0.205f, 1f, -0.0639f),
+            floatArrayOf(0.012f, 0.33f, 0.30f, -0.0627f),
             floatArrayOf(0.002f, 0.38f, 0.11f, -0.0624f),
         )
-        for (layer in layers) draw(back, Face(-2), layer[1], mesh = true, zOffset = zOffset,
-            shadow = floatArrayOf(sign * (layer[2] + layer[0]), -(0.82f * layer[2] + layer[0]), layer[3]))
+        for (layer in layers) {
+            draw(
+                back,
+                Face(-2),
+                layer[1],
+                mesh = true,
+                zOffset = zOffset,
+                shadow = floatArrayOf(sign * (layer[2] + layer[0]), -(0.82f * layer[2] + layer[0]), layer[3]),
+            )
+        }
         glDepthMask(true)
         glDisable(GL_BLEND)
     }
 
     private fun drawBook() {
         val closed = book && (index == -1 || index == faces.lastIndex)
-        if (closed && progress <= 0.001) { page(if (index == faces.lastIndex) faces.lastIndex else 0, 0f, 1f); return }
-        if (book && progress <= 0.001) { page(index, -1f, 0f); page(index + 1, 0f, 1f); return }
+        if (closed && progress <= 0.001) {
+            page(if (index == faces.lastIndex) faces.lastIndex else 0, 0f, 1f)
+            return
+        }
+        if (book && progress <= 0.001) {
+            page(index, -1f, 0f)
+            page(index + 1, 0f, 1f)
+            return
+        }
         if (!book && progress <= 0.001) {
             val face = faces.getOrNull(index) ?: return
             val offset = if (face.wide) (pan * 0.5).toFloat() else 0f
@@ -568,26 +722,84 @@ internal class PhysicalBookRenderer(
             val frontIndex: Int
             val backIndex: Int
             if (direction == 1) {
-                if (index == -1) { page(2, 0f, 1f); frontIndex = 0; backIndex = 1 }
-                else { page(index, -1f, 0f); page(if (index == faces.size - 3) faces.lastIndex else index + 3, 0f, 1f); frontIndex = index + 1; backIndex = index + 2 }
+                if (index == -1) {
+                    page(2, 0f, 1f)
+                    frontIndex = 0
+                    backIndex = 1
+                } else {
+                    page(index, -1f, 0f)
+                    page(
+                        if (index ==
+                            faces.size - 3
+                        ) {
+                            faces.lastIndex
+                        } else {
+                            index + 3
+                        },
+                        0f,
+                        1f,
+                    )
+                    frontIndex = index + 1
+                    backIndex =
+                        index + 2
+                }
             } else {
-                if (index == 1) page(2, 0f, 1f, -0.075f)
-                else { page(index - 2, -1f, 0f); page(index + 1, 0f, 1f) }
+                if (index == 1) {
+                    page(2, 0f, 1f, -0.075f)
+                } else {
+                    page(index - 2, -1f, 0f)
+                    page(index + 1, 0f, 1f)
+                }
                 frontIndex = index
                 backIndex = index - 1
             }
             shadows(back, -0.001f)
             draw(front, faces.getOrNull(frontIndex), 0.99f, turning = true, mesh = true)
-            draw(back, faces.getOrNull(backIndex), 0.96f, turning = true, reverse = true, mesh = true, zOffset = -0.001f)
+            draw(
+                back,
+                faces.getOrNull(backIndex),
+                0.96f,
+                turning = true,
+                reverse = true,
+                mesh = true,
+                zOffset = -0.001f,
+            )
         } else {
             page(index + direction, -0.5f, 0.5f, -0.085f)
             val current = faces.getOrNull(index)
-            if (current?.wide == true) for (i in 3 until front.size step 5) front[i] = (if (direction == 1) 0.5f else 0f) + (if (direction == -1) 1f - front[i] else front[i]) * 0.5f
+            if (current?.wide ==
+                true
+            ) {
+                for (i in 3 until front.size step 5) {
+                    front[i] =
+                        (if (direction == 1) 0.5f else 0f) + (if (direction == -1) 1f - front[i] else front[i]) * 0.5f
+                }
+            }
             shadows(back, 0f)
             draw(front, current, 0.99f, mesh = true, uvMapped = current?.wide == true)
             val incoming = faces.getOrNull(index + direction)
-            if (incoming?.wide == true) for (i in 3 until back.size step 5) back[i] = (if (direction == -1) 0.5f else 0f) + (if (direction == -1) 1f - back[i] else back[i]) * 0.5f
-            draw(back, incoming ?: Face(-2), if (incoming != null) 0.97f else 0.93f, gray = incoming != null, mesh = true, uvMapped = incoming?.wide == true)
+            if (incoming?.wide ==
+                true
+            ) {
+                for (i in 3 until back.size step 5) {
+                    back[i] =
+                        (if (direction == -1) 0.5f else 0f) + (if (direction == -1) 1f - back[i] else back[i]) * 0.5f
+                }
+            }
+            draw(
+                back,
+                incoming ?: Face(-2),
+                if (incoming !=
+                    null
+                ) {
+                    0.97f
+                } else {
+                    0.93f
+                },
+                gray = incoming != null,
+                mesh = true,
+                uvMapped = incoming?.wide == true,
+            )
         }
     }
 

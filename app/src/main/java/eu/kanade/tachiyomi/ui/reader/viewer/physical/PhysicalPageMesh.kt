@@ -92,13 +92,15 @@ internal object PhysicalPageMesh {
                 vertex(if (back) k else k + 1)
             }
         }
-        for (i in 0 until 88) for (j in 0 until 56) {
-            val a = doubleArrayOf(i / 88.0, j / 56.0)
-            val b = doubleArrayOf((i + 1) / 88.0, j / 56.0)
-            val c = doubleArrayOf(i / 88.0, (j + 1) / 56.0)
-            val d = doubleArrayOf((i + 1) / 88.0, (j + 1) / 56.0)
-            emit(arrayOf(a, b, c))
-            emit(arrayOf(c, b, d))
+        for (i in 0 until 88) {
+            for (j in 0 until 56) {
+                val a = doubleArrayOf(i / 88.0, j / 56.0)
+                val b = doubleArrayOf((i + 1) / 88.0, j / 56.0)
+                val c = doubleArrayOf(i / 88.0, (j + 1) / 56.0)
+                val d = doubleArrayOf((i + 1) / 88.0, (j + 1) / 56.0)
+                emit(arrayOf(a, b, c))
+                emit(arrayOf(c, b, d))
+            }
         }
         return output.copyOf(size)
     }

@@ -6,7 +6,13 @@ import org.junit.jupiter.api.Test
 class PhysicalPageMeshTest {
     @Test
     fun matchesApprovedV40Mesh() {
-        checkMesh(0.0, 0.5, 0.5, false, false, 147840,
+        checkMesh(
+            0.0,
+            0.5,
+            0.5,
+            false,
+            false,
+            147840,
             intArrayOf(
                 0,
                 1556,
@@ -204,7 +210,13 @@ class PhysicalPageMeshTest {
                 1.0,
             ),
         )
-        checkMesh(0.17, 0.2, 0.8, false, false, 109515,
+        checkMesh(
+            0.17,
+            0.2,
+            0.8,
+            false,
+            false,
+            109515,
             intArrayOf(
                 0,
                 1152,
@@ -402,7 +414,13 @@ class PhysicalPageMeshTest {
                 1.0,
             ),
         )
-        checkMesh(0.17, 0.2, 0.8, true, true, 45465,
+        checkMesh(
+            0.17,
+            0.2,
+            0.8,
+            true,
+            true,
+            45465,
             intArrayOf(
                 0,
                 478,
@@ -600,7 +618,13 @@ class PhysicalPageMeshTest {
                 0.5535714285714286,
             ),
         )
-        checkMesh(0.53, 0.7, 0.1, false, false, 62820,
+        checkMesh(
+            0.53,
+            0.7,
+            0.1,
+            false,
+            false,
+            62820,
             intArrayOf(
                 0,
                 661,
@@ -798,7 +822,13 @@ class PhysicalPageMeshTest {
                 0.005712121212121019,
             ),
         )
-        checkMesh(0.53, 0.7, 0.1, true, true, 88380,
+        checkMesh(
+            0.53,
+            0.7,
+            0.1,
+            true,
+            true,
+            88380,
             intArrayOf(
                 0,
                 930,
@@ -996,7 +1026,13 @@ class PhysicalPageMeshTest {
                 0.9821428571428571,
             ),
         )
-        checkMesh(0.88, 0.1, 0.9, true, true, 118215,
+        checkMesh(
+            0.88,
+            0.1,
+            0.9,
+            true,
+            true,
+            118215,
             intArrayOf(
                 0,
                 1244,
@@ -1194,7 +1230,13 @@ class PhysicalPageMeshTest {
                 0.9821428571428571,
             ),
         )
-        checkMesh(0.99, 0.5, 0.5, true, true, 148680,
+        checkMesh(
+            0.99,
+            0.5,
+            0.5,
+            true,
+            true,
+            148680,
             intArrayOf(
                 0,
                 1565,

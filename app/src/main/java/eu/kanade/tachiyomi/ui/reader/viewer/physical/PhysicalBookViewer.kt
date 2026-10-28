@@ -53,6 +53,8 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
     private var chapters: ViewerChapters? = null
     private var surface: BookSurface? = null
     private var generation = 0
+    private var knownDimensions = emptyMap<Int, Pair<Int, Int>>()
+    private var metadataReady = false
     private var selectedIndex = 0
     private var focusIndex = 0
     private var loading by mutableStateOf(true)
@@ -65,8 +67,8 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
         val view = remember {
             BookSurface().also {
                 surface = it
-                chapters?.currChapter?.let { chapter ->
-                    it.command { setChapter(chapter.pages.orEmpty().size, chapter.requestedPage) }
+                chapters?.currChapter?.takeIf { metadataReady }?.let { chapter ->
+                    it.command { setChapter(chapter.pages.orEmpty().size, chapter.requestedPage, knownDimensions) }
                 }
             }
         }
@@ -74,7 +76,10 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
             val observer = LifecycleEventObserver { _, event ->
                 when (event) {
                     Lifecycle.Event.ON_PAUSE -> view.onPause()
-                    Lifecycle.Event.ON_RESUME -> { view.onResume(); view.requestRender() }
+                    Lifecycle.Event.ON_RESUME -> {
+                        view.onResume()
+                        view.requestRender()
+                    }
                     else -> {}
                 }
             }
@@ -90,17 +95,35 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
             AndroidView(
                 factory = { view },
                 modifier = Modifier.fillMaxSize(),
-                update = { it.command { readerGray = general.grayscale; inverted = general.invertedColors } },
+                update = {
+                    it.command {
+                        readerGray = general.grayscale
+                        inverted = general.invertedColors
+                    }
+                },
             )
             if (loading) LoadingScreen()
             failure?.let { (page, error) ->
-                ReaderPageError(page, error, activity.viewModel.source?.id, Modifier.fillMaxSize())
+                ReaderPageError(
+                    page, error, activity.viewModel.source?.id, Modifier.fillMaxSize(),
+                    onRetry = {
+                        failure = null
+                        loading = true
+                        if (page.chapter.pageLoader?.isLocal == true) page.status = Page.State.Ready
+                        else page.chapter.pageLoader?.retryPage(page)
+                    },
+                )
             }
         }
     }
 
     override fun setChapters(chapters: ViewerChapters) {
-        if (this.chapters?.currChapter === chapters.currChapter) return
+        if (this.chapters?.currChapter === chapters.currChapter) {
+            chapters.ref()
+            this.chapters?.unref()
+            this.chapters = chapters
+            return
+        }
         chapters.ref()
         val old = this.chapters
         this.chapters = chapters
@@ -111,7 +134,36 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
         focusIndex = selectedIndex
         loading = true
         failure = null
-        surface?.command { setChapter(chapters.currChapter.pages.orEmpty().size, selectedIndex) }
+        metadataReady = false
+        knownDimensions = emptyMap()
+        val token = generation
+        scope.launch {
+            val known = withContext(Dispatchers.IO) {
+                val result = mutableMapOf<Int, Pair<Int, Int>>()
+                for (page in chapters.currChapter.pages.orEmpty()) {
+                    try {
+                        val input = if (page.status == Page.State.Ready) page.stream?.invoke() else null
+                        val cached = input ?: page.imageUrl?.let { activity.appGraph.chapterCache.openImage(it) }
+                        cached?.use {
+                            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                            BitmapFactory.decodeStream(it, null, bounds)
+                            if (bounds.outWidth > 0 && bounds.outHeight > 0) {
+                                result[page.index] = bounds.outWidth to bounds.outHeight
+                            }
+                        }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        // Normal loading retains Mihon's visible error and retry handling.
+                    }
+                }
+                result
+            }
+            if (generation != token) return@launch
+            knownDimensions = known
+            metadataReady = true
+            surface?.command { setChapter(chapters.currChapter.pages.orEmpty().size, selectedIndex, known) }
+        }
         old?.unref()
     }
 
@@ -119,7 +171,10 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
         scope.launch {
             val chapter = chapters?.currChapter ?: return@launch
             val page = chapter.pages?.getOrNull(index) ?: return@launch
-            if (required) focusIndex = index
+            if (required) {
+                focusIndex = index
+                (page.status as? Page.State.Error)?.let { loading = false; failure = page to it.error }
+            }
             if (jobs[index]?.isActive == true) return@launch
             val token = generation
             jobs[index] = scope.launch {
@@ -132,7 +187,10 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
                                     try {
                                         // Let a retried HTTP page leave its previous Error state first.
                                         if (page.status is Page.State.Error) chapter.pageLoader?.retryPage(page)
-                                        val state = page.statusFlow.first { it == Page.State.Ready || it is Page.State.Error }
+                                        val state = page.statusFlow.first {
+                                            it == Page.State.Ready ||
+                                                it is Page.State.Error
+                                        }
                                         if (state is Page.State.Error) throw state.error
                                         val stream = checkNotNull(page.stream)
                                         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -140,7 +198,10 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
                                         check(bounds.outWidth > 0 && bounds.outHeight > 0) { "Unsupported image" }
                                         val options = BitmapFactory.Options().apply {
                                             inPreferredConfig = Bitmap.Config.ARGB_8888
-                                            while (max(bounds.outWidth, bounds.outHeight) / inSampleSize.coerceAtLeast(1) > 2048) {
+                                            while (max(bounds.outWidth, bounds.outHeight) /
+                                                inSampleSize.coerceAtLeast(1) >
+                                                2048
+                                            ) {
                                                 inSampleSize = inSampleSize.coerceAtLeast(1) * 2
                                             }
                                         }
@@ -152,18 +213,28 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
                                 }
                             }
                         }
-                        if (token != generation || surface == null) { decoded.first.recycle(); return@launch }
-                        surface?.command {
-                            if (token == generation) putPage(index, decoded.first, decoded.second, decoded.third)
-                            else decoded.first.recycle()
+                        if (token != generation || surface == null) {
+                            decoded.first.recycle()
+                            return@launch
                         }
-                        if (index == focusIndex) { loading = false; failure = null }
+                        surface?.command {
+                            if (token == generation) {
+                                putPage(index, decoded.first, decoded.second, decoded.third)
+                            } else {
+                                decoded.first.recycle()
+                            }
+                        }
+                        if (index == focusIndex) {
+                            loading = false
+                            failure = null
+                        }
                         return@launch
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Throwable) {
+                        page.status = Page.State.Error(e)
                         if (index == focusIndex) { loading = false; failure = page to e }
-                        page.statusFlow.first { it !is Page.State.Error && it != Page.State.Ready }
+                        page.statusFlow.first { it !is Page.State.Error }
                     }
                 }
             }
@@ -174,9 +245,14 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
         if (page.chapter !== chapters?.currChapter) return
         surface?.command { seek(page.index) }
     }
-    override fun moveForward() { surface?.command { flip(1) } }
-    override fun moveBackward() { surface?.command { flip(-1) } }
+    override fun moveForward() {
+        surface?.command { flip(1) }
+    }
+    override fun moveBackward() {
+        surface?.command { flip(-1) }
+    }
     override fun destroy() {
+        generation++
         scope.cancel()
         chapters?.unref()
         chapters = null
@@ -209,28 +285,38 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
             },
             nextFrame = { postOnAnimation { requestRender() } },
         )
-        private val scale = ScaleGestureDetector(activity, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
-            override fun onScale(detector: ScaleGestureDetector): Boolean {
-                val factor = detector.scaleFactor
-                command { zoomBy(factor) }
-                return true
-            }
-        })
-        private val gesture = GestureDetector(activity, object : GestureDetector.SimpleOnGestureListener() {
-            override fun onDown(e: MotionEvent) = true
-            override fun onDoubleTap(e: MotionEvent): Boolean { command { doubleTap() }; return true }
-            override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
-                if (longPressed || scaling) return true
-                val x = e.x / width
-                if (x in 0.35f..0.65f) activity.toggleMenu() else activity.onViewerTap(Offset(x, e.y / height))
-                return true
-            }
-            override fun onLongPress(e: MotionEvent) {
-                if (!activity.settingsViewModel.general.value.longTapEnabled) return
-                longPressed = true
-                chapters?.currChapter?.pages?.getOrNull(selectedIndex)?.let(activity::onPageLongTap)
-            }
-        })
+        private val scale =
+            ScaleGestureDetector(
+                activity,
+                object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                    override fun onScale(detector: ScaleGestureDetector): Boolean {
+                        val factor = detector.scaleFactor
+                        command { zoomBy(factor) }
+                        return true
+                    }
+                },
+            )
+        private val gesture = GestureDetector(
+            activity,
+            object : GestureDetector.SimpleOnGestureListener() {
+                override fun onDown(e: MotionEvent) = true
+                override fun onDoubleTap(e: MotionEvent): Boolean {
+                    command { doubleTap() }
+                    return true
+                }
+                override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+                    if (longPressed || scaling) return true
+                    val x = e.x / width
+                    if (x in 0.35f..0.65f) activity.toggleMenu() else activity.onViewerTap(Offset(x, e.y / height))
+                    return true
+                }
+                override fun onLongPress(e: MotionEvent) {
+                    if (!activity.settingsViewModel.general.value.longTapEnabled) return
+                    longPressed = true
+                    chapters?.currChapter?.pages?.getOrNull(selectedIndex)?.let(activity::onPageLongTap)
+                }
+            },
+        )
         init {
             setEGLContextClientVersion(2)
             setEGLConfigChooser(8, 8, 8, 8, 16, 0)

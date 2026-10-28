@@ -11,7 +11,7 @@ concurrency:
 jobs:
   native:
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -27,13 +27,49 @@ jobs:
           cat native-format.patch
           echo NATIVE_FORMAT_END
       - name: Test approved mesh and build native APK
-        run: ./gradlew :app:testDebugUnitTest :app:assembleDebug --stacktrace
+        run: ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Verify actual ReaderActivity on Android
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          profile: pixel_2
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+          script: |
+            result=0
+            ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=eu.kanade.tachiyomi.ui.reader.viewer.physical.NativePhysicalReaderTest --stacktrace || result=$?
+            mkdir -p app/build/native-proof
+            adb pull /sdcard/Android/data/app.mihon.physicaldemo.dev/files/native-physical-proof app/build/native-proof || true
+            adb logcat -d > app/build/native-proof/logcat.txt
+            exit $result
+      - name: Record visual proof
+        if: always()
+        run: |
+          for image in $(find app/build/native-proof -name '*.jpg' 2>/dev/null); do
+            echo NATIVE_IMAGE_BEGIN $(basename "$image")
+            base64 -w76 "$image"
+            echo NATIVE_IMAGE_END
+          done
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: native-physical-v40-build
+          name: mihon-native-v40-apk
+          path: app/build/outputs/apk/debug/*universal*.apk
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-v40-verification
           path: |
-            app/build/outputs/apk/debug/*universal*.apk
+            app/build/native-proof
             app/build/reports/tests/testDebugUnitTest
+            app/build/reports/androidTests
             native-format.patch
-          if-no-files-found: error
+          if-no-files-found: warn
