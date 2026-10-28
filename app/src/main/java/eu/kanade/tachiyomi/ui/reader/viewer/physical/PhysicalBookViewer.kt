@@ -29,6 +29,7 @@ import eu.kanade.tachiyomi.ui.reader.model.ViewerChapters
 import eu.kanade.tachiyomi.ui.reader.viewer.ReaderPageError
 import eu.kanade.tachiyomi.ui.reader.viewer.Viewer
 import kotlinx.coroutines.CancellationException
+import mihon.app.di.appGraph
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
@@ -105,12 +106,18 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
             if (loading) LoadingScreen()
             failure?.let { (page, error) ->
                 ReaderPageError(
-                    page, error, activity.viewModel.source?.id, Modifier.fillMaxSize(),
+                    page,
+                    error,
+                    activity.viewModel.source?.id,
+                    Modifier.fillMaxSize(),
                     onRetry = {
                         failure = null
                         loading = true
-                        if (page.chapter.pageLoader?.isLocal == true) page.status = Page.State.Ready
-                        else page.chapter.pageLoader?.retryPage(page)
+                        if (page.chapter.pageLoader?.isLocal == true) {
+                            page.status = Page.State.Ready
+                        } else {
+                            page.chapter.pageLoader?.retryPage(page)
+                        }
                     },
                 )
             }
@@ -173,7 +180,10 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
             val page = chapter.pages?.getOrNull(index) ?: return@launch
             if (required) {
                 focusIndex = index
-                (page.status as? Page.State.Error)?.let { loading = false; failure = page to it.error }
+                (page.status as? Page.State.Error)?.let {
+                    loading = false
+                    failure = page to it.error
+                }
             }
             if (jobs[index]?.isActive == true) return@launch
             val token = generation
@@ -233,7 +243,10 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
                         throw e
                     } catch (e: Throwable) {
                         page.status = Page.State.Error(e)
-                        if (index == focusIndex) { loading = false; failure = page to e }
+                        if (index == focusIndex) {
+                            loading = false
+                            failure = page to e
+                        }
                         page.statusFlow.first { it !is Page.State.Error }
                     }
                 }

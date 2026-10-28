@@ -66,6 +66,7 @@ import android.opengl.GLES20.glViewport
 import android.opengl.GLSurfaceView
 import android.opengl.GLUtils
 import android.os.SystemClock
+import android.util.Log
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
@@ -99,6 +100,9 @@ internal class PhysicalBookRenderer(
     private var ph = 1.36f
     private var viewSw = 2f
     private var viewSh = 2f
+    private var measuredFrames = 0
+    private var measuredNanos = 0L
+    private var measuredMaxNanos = 0L
     private var program = 0
     private var grain = 0
     private var backing = 0
@@ -547,7 +551,22 @@ internal class PhysicalBookRenderer(
         )
         glUniformMatrix4fv(u("uProj"), 1, false, projection, 0)
         glClear(GL_COLOR_BUFFER_BIT or GL_DEPTH_BUFFER_BIT)
+        val renderStart = SystemClock.elapsedRealtimeNanos()
         drawBook()
+        if (progress > 0.001) {
+            val elapsed = SystemClock.elapsedRealtimeNanos() - renderStart
+            measuredFrames++
+            measuredNanos += elapsed
+            measuredMaxNanos = max(measuredMaxNanos, elapsed)
+        }
+        if (!drag && animationDuration == 0.0 && measuredFrames > 0) {
+            val average = measuredNanos / measuredFrames / 1_000_000.0
+            val slowest = measuredMaxNanos / 1_000_000.0
+            Log.i("NativePhysicalV40", "curl frames=$measuredFrames cpuMeanMs=$average cpuMaxMs=$slowest")
+            measuredFrames = 0
+            measuredNanos = 0
+            measuredMaxNanos = 0
+        }
         if (!drag && animationDuration == 0.0) {
             val selectedSource = currentSource()
             if (selectedSource != lastReported) {

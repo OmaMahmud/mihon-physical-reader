@@ -31,7 +31,7 @@ fun ReaderPageError(
     val imageUrl = page.imageUrl?.takeIf { it.startsWith("http", ignoreCase = true) }
     ReaderError(
         message = with(context) { error?.formattedMessage },
-        onRetry = onRetry ?: { page.chapter.pageLoader?.retryPage(page) },
+        onRetry = onRetry ?: { page.chapter.pageLoader?.retryPage(page); Unit },
         onOpenInWebView = imageUrl?.let {
             { context.startActivity(WebViewActivity.newIntent(context, it, sourceId)) }
         },

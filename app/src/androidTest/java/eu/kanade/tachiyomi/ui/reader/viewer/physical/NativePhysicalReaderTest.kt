@@ -3,6 +3,7 @@ package eu.kanade.tachiyomi.ui.reader.viewer.physical
 import android.content.Context
 import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -20,10 +21,21 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.UiDevice
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
+import eu.kanade.tachiyomi.ui.reader.loader.HttpPageLoader
+import eu.kanade.tachiyomi.ui.reader.model.ReaderChapter
+import eu.kanade.tachiyomi.source.model.Page
+import eu.kanade.tachiyomi.source.model.SChapter
+import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderOrientation
 import eu.kanade.tachiyomi.ui.reader.setting.ReadingMode
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.runBlocking
 import mihon.app.di.AppGraph
 import mihon.core.metro.metroGraph
 import org.junit.Assert.assertEquals
@@ -35,6 +47,10 @@ import org.junit.runner.RunWith
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.manga.model.Manga
 import java.io.File
+import java.io.ByteArrayOutputStream
+import java.net.ServerSocket
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.concurrent.thread
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
@@ -47,6 +63,74 @@ class NativePhysicalReaderTest {
     private val device = UiDevice.getInstance(instrumentation)
     private val graph = context.metroGraph<AppGraph>()
     private val proof = File(context.getExternalFilesDir(null), "native-physical-proof").apply { mkdirs() }
+
+    @Test
+    fun onlineLoaderRetriesAndReadsTheCacheAfterNetworkDisconnects() {
+        val bitmap = Bitmap.createBitmap(64, 96, Bitmap.Config.ARGB_8888)
+        bitmap.eraseColor(Color.BLUE)
+        val output = ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
+        bitmap.recycle()
+        val bytes = output.toByteArray()
+        val server = ServerSocket(0)
+        val requests = AtomicInteger(0)
+        val worker = thread(isDaemon = true) {
+            try {
+                while (!server.isClosed) {
+                    server.accept().use { socket ->
+                        val reader = socket.getInputStream().bufferedReader()
+                        while (reader.readLine()?.isNotEmpty() == true) { }
+                        val fail = requests.incrementAndGet() == 1
+                        val body = if (fail) byteArrayOf() else bytes
+                        val status = if (fail) "500 Test retry" else "200 OK"
+                        val headers = "HTTP/1.1 $status\r\nContent-Type: image/png\r\nContent-Length: "+
+                            body.size + "\r\nConnection: close\r\n\r\n"
+                        socket.getOutputStream().write(headers.toByteArray())
+                        socket.getOutputStream().write(body)
+                        socket.getOutputStream().flush()
+                    }
+                }
+            } catch (_: Exception) { }
+        }
+        val source = object : HttpSource() {
+            override val name = "Native physical network test"
+            override val lang = "en"
+            override val supportsLatest = false
+            override val baseUrl = "http://127.0.0.1:" + server.localPort
+            override suspend fun getPageList(chapter: SChapter) = listOf(Page(0, imageUrl = "$baseUrl/page.png"))
+        }
+        val chapter = ReaderChapter(Chapter.create().copy(url = source.baseUrl + "/chapter"))
+        val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val loader = HttpPageLoader(chapter, source, graph.chapterCache, appScope) { true }
+        try {
+            runBlocking {
+                val pages = loader.getPages()
+                pages.forEach { it.chapter = chapter }
+                chapter.state = ReaderChapter.State.Loaded(pages)
+                chapter.pageLoader = loader
+                val page = pages.single()
+                withTimeout(30_000) { page.statusFlow.first { it is Page.State.Error } }
+                loader.retryPage(page)
+                withTimeout(30_000) { page.statusFlow.first { it == Page.State.Ready } }
+                assertNotNull(page.stream?.invoke()?.use { BitmapFactory.decodeStream(it) })
+                assertTrue(graph.chapterCache.isImageInCache(checkNotNull(page.imageUrl)))
+                server.close()
+                val before = requests.get()
+                page.status = Page.State.Queue
+                page.stream = null
+                val load = appScope.launch { loader.loadPage(page) }
+                withTimeout(30_000) { page.statusFlow.first { it == Page.State.Ready } }
+                assertNotNull(page.stream?.invoke()?.use { BitmapFactory.decodeStream(it) })
+                assertEquals("Cached image must not make another network request", before, requests.get())
+                load.cancel()
+            }
+        } finally {
+            server.close()
+            worker.join(2000)
+            loader.recycle()
+            appScope.cancel()
+        }
+    }
 
     @Test
     fun realCbzUsesNativeCurlControlsProgressAndLifecycle() {
@@ -63,15 +147,34 @@ class NativePhysicalReaderTest {
         graph.readerPreferences.fullscreen.set(true)
         val manga = runBlocking {
             graph.mangaRepository.insertNetworkManga(
-                listOf(Manga.create().copy(url = "Native Curl Proof", title = "Native Curl Proof", source = 0, initialized = true)),
+                listOf(
+                    Manga.create().copy(
+                        url = "Native Curl Proof",
+                        title = "Native Curl Proof",
+                        source = 0,
+                        initialized = true,
+                    ),
+                ),
             ).single()
         }
         val chapters = runBlocking {
             graph.chapterRepository.updateFromRemote(
                 emptyList(),
                 listOf(
-                    Chapter.create().copy(mangaId = manga.id, url = "Native Curl Proof/001.cbz", name = "Chapter 1", chapterNumber = 1.0, sourceOrder = 1),
-                    Chapter.create().copy(mangaId = manga.id, url = "Native Curl Proof/002.cbz", name = "Chapter 2", chapterNumber = 2.0, sourceOrder = 0),
+                    Chapter.create().copy(
+                        mangaId = manga.id,
+                        url = "Native Curl Proof/001.cbz",
+                        name = "Chapter 1",
+                        chapterNumber = 1.0,
+                        sourceOrder = 1,
+                    ),
+                    Chapter.create().copy(
+                        mangaId = manga.id,
+                        url = "Native Curl Proof/002.cbz",
+                        name = "Chapter 2",
+                        chapterNumber = 2.0,
+                        sourceOrder = 0,
+                    ),
                 ),
                 emptyList(),
             )
@@ -85,7 +188,10 @@ class NativePhysicalReaderTest {
                 val surface = checkNotNull(findSurface(it.window.decorView))
                 assertTrue("Native renderer must fill the reader", surface.height > it.window.decorView.height * 0.85)
                 assertFalse("No embedded webpage", containsWebView(it.window.decorView))
-                assertEquals(PhysicalBookViewer::class.java, ReadingMode.toViewer(ReadingMode.LEFT_TO_RIGHT.flagValue, it)::class.java)
+                assertEquals(
+                    PhysicalBookViewer::class.java,
+                    ReadingMode.toViewer(ReadingMode.LEFT_TO_RIGHT.flagValue, it)::class.java,
+                )
                 it.hideMenu()
             }
             SystemClock.sleep(600)
@@ -102,7 +208,10 @@ class NativePhysicalReaderTest {
             waitFor(scenario) { it.viewModel.state.value.currentPage == 1 }
             swipe(true)
             waitFor(scenario) { it.viewModel.state.value.currentPage == 2 }
-            repeat(5) { swipe(true); SystemClock.sleep(50) }
+            repeat(5) {
+                swipe(true)
+                SystemClock.sleep(50)
+            }
             SystemClock.sleep(900)
             scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE }
             waitFor(scenario) { it.resources.configuration.screenWidthDp > it.resources.configuration.screenHeightDp }
@@ -123,7 +232,12 @@ class NativePhysicalReaderTest {
         val saved = runBlocking { graph.chapterRepository.getChapterById(first.id) }
         assertNotNull(saved)
         assertTrue("Progress is saved through Mihon", saved!!.lastPageRead > 0)
-        assertTrue("History is saved through Mihon", runBlocking { graph.historyRepository.getHistoryByMangaId(manga.id) }.isNotEmpty())
+        assertTrue(
+            "History is saved through Mihon",
+            runBlocking {
+                graph.historyRepository.getHistoryByMangaId(manga.id)
+            }.isNotEmpty(),
+        )
     }
 
     private fun ReaderActivity.lifecycleScopeForTestLoadNext() {
@@ -184,7 +298,12 @@ class NativePhysicalReaderTest {
     private fun capture(name: String) {
         val screenshot = checkNotNull(instrumentation.uiAutomation.takeScreenshot())
         val scale = minOf(1f, 1000f / max(screenshot.width, screenshot.height))
-        val small = Bitmap.createScaledBitmap(screenshot, (screenshot.width * scale).toInt(), (screenshot.height * scale).toInt(), true)
+        val small = Bitmap.createScaledBitmap(
+            screenshot,
+            (screenshot.width * scale).toInt(),
+            (screenshot.height * scale).toInt(),
+            true,
+        )
         File(proof, "$name.jpg").outputStream().use { small.compress(Bitmap.CompressFormat.JPEG, 88, it) }
         if (small !== screenshot) small.recycle()
         screenshot.recycle()
@@ -209,14 +328,43 @@ class NativePhysicalReaderTest {
         ZipOutputStream(file.outputStream()).use { zip ->
             repeat(9) { index ->
                 val wide = index == 3 || index == 7
-                val bitmap = Bitmap.createBitmap(if (wide) 1600 else 720, if (wide) 900 else 1080, Bitmap.Config.ARGB_8888)
+                val bitmap = Bitmap.createBitmap(
+                    if (wide) 1600 else 720,
+                    if (wide) 900 else 1080,
+                    Bitmap.Config.ARGB_8888,
+                )
                 val canvas = Canvas(bitmap)
-                canvas.drawColor(intArrayOf(Color.rgb(230, 50, 50), Color.rgb(35, 170, 90), Color.rgb(50, 85, 220))[index % 3])
-                val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textSize = 80f; strokeWidth = 12f }
+                canvas.drawColor(
+                    intArrayOf(Color.rgb(230, 50, 50), Color.rgb(35, 170, 90), Color.rgb(50, 85, 220))[
+                        index %
+                            3,
+                    ],
+                )
+                val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = Color.WHITE
+                    textSize = 80f
+                    strokeWidth = 12f
+                }
                 canvas.drawText("CHAPTER PAGE ${index + 1}", 30f, 130f, paint)
                 paint.color = Color.BLACK
-                for (x in 30 until bitmap.width step 180) canvas.drawLine(x.toFloat(), 180f, x.toFloat(), bitmap.height - 20f, paint)
-                for (y in 180 until bitmap.height step 180) canvas.drawLine(30f, y.toFloat(), bitmap.width - 20f, y.toFloat(), paint)
+                for (x in 30 until bitmap.width step 180) {
+                    canvas.drawLine(
+                        x.toFloat(),
+                        180f,
+                        x.toFloat(),
+                        bitmap.height - 20f,
+                        paint,
+                    )
+                }
+                for (y in 180 until bitmap.height step 180) {
+                    canvas.drawLine(
+                        30f,
+                        y.toFloat(),
+                        bitmap.width - 20f,
+                        y.toFloat(),
+                        paint,
+                    )
+                }
                 zip.putNextEntry(ZipEntry("${index.toString().padStart(3, '0')}.png"))
                 bitmap.compress(Bitmap.CompressFormat.PNG, 100, zip)
                 zip.closeEntry()
