@@ -47,7 +47,7 @@ import kotlin.math.min
     var marks by remember(comic.id){mutableStateOf((0 until JSONArray(comic.marks).length()).map {JSONArray(comic.marks).getInt(it)}.toSet())}
     val landscape=LocalConfiguration.current.screenWidthDp>LocalConfiguration.current.screenHeightDp
     val double=layout=="Double" || layout=="Auto" && landscape
-    var starts by remember{mutableStateOf(listOf(0))}
+    var starts by remember{mutableStateOf(emptyList<Int>())}
     val view=remember(comic.id){PhysicalReader(context)}
     val lifecycle=LocalLifecycleOwner.current
     val latestPage by rememberUpdatedState(page)
@@ -63,6 +63,7 @@ import kotlin.math.min
     DisposableEffect(document) {val opened=document;onDispose {opened?.close()}}
     LaunchedEffect(document,double) {
         val doc=document ?: return@LaunchedEffect
+        starts=emptyList();view.ready=false;loading=true
         starts=withContext(Dispatchers.IO) {PageLayout.starts(BooleanArray(doc.count){doc.wide(it)},double)}
         page=starts.lastOrNull {it<=page} ?: 0
     }
@@ -74,6 +75,7 @@ import kotlin.math.min
     view.bookMode=double;view.onTurn={move(it)};view.onControls={controls=!controls;settings=false};view.rtl=rtl
     LaunchedEffect(document,page,double,rtl,starts) {
         val doc=document ?: return@LaunchedEffect
+        if(starts.isEmpty() || page !in starts)return@LaunchedEffect
         loading=true;view.ready=false
         try {
             val pos=starts.indexOfLast {it<=page}.coerceAtLeast(0)

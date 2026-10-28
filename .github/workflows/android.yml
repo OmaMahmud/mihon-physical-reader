@@ -18,6 +18,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
+          cache-read-only: false
       - name: Fetch licensed comic fixture for tests only
         run: |
           mkdir -p app/src/androidTest/assets/comic
@@ -43,9 +44,7 @@ jobs:
           target: google_apis
           profile: pixel_2
           disable-animations: true
-          script: |
-            gradle connectedDebugAndroidTest --stacktrace
-            adb pull /sdcard/Download/real-reader-proof app/build/proof
+          script: bash .github/scripts/emulator-tests.sh
       - uses: actions/upload-artifact@v4
         if: always()
         with:

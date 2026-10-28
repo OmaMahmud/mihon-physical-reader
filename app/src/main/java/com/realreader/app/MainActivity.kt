@@ -181,7 +181,7 @@ private fun Modifier.semanticsLabel(label: String): Modifier = this.then(Modifie
                             listOf("cbz","zip","pdf","jpg","jpeg","png","webp").forEach {ext ->Row(Modifier.fillMaxWidth().heightIn(min=48.dp),verticalAlignment=Alignment.CenterVertically) {Text(ext.uppercase(),Modifier.weight(1f));Switch(ext in enabled,{checked->store.prefs.edit().putStringSet("formats",if(checked)enabled+ext else enabled-ext).apply();formatsVersion++})}}
                             Text("CBR/RAR is not supported in this alpha. Convert owned archives to CBZ to read them.",style=MaterialTheme.typography.bodySmall)
                         }
-                        Glass {Text("About this alpha",style=MaterialTheme.typography.titleLarge);Text("Real Reader 0.1.0 · Independent native Android codebase. Local files and progress stay on this device. No ads, account, subscription, or network permission.");Text("Remote servers, metadata enrichment, panel recognition and CBR parsing are outstanding. Glass uses translucent tonal surfaces; live background blur is not implemented.",style=MaterialTheme.typography.bodySmall)}
+                        Glass {Text("About this alpha",style=MaterialTheme.typography.titleLarge);Text("Real Reader 0.1.0 · Independent native Android codebase. Local files and progress stay on this device. No ads, account, subscription, or Internet permission.");Text("Remote servers, metadata enrichment, panel recognition and CBR parsing are outstanding. Glass uses translucent tonal surfaces; live background blur is not implemented.",style=MaterialTheme.typography.bodySmall)}
                     }
                 }
                 composable("reader/{id}") {back ->

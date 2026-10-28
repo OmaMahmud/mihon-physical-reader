@@ -67,9 +67,10 @@ class ReaderDeviceTest {
   compose.onNodeWithContentDescription("Bookmark page",useUnmergedTree=true).performClick()
   compose.onNodeWithContentDescription("Home",useUnmergedTree=true).performClick()
   compose.onNodeWithText("Continue Reading").assertExists()
+  assertFalse(store.db.all().first{it.name==file.name}.finished)
   proof("home-continue")
   compose.onNodeWithText("Continue Reading").performClick()
-  compose.waitUntil(30000) {store.db.all().first{it.name==file.name}.page==1}
+  compose.waitUntil(30000) {compose.onAllNodesWithText("2 / 3").fetchSemanticsNodes().size==1}
   compose.onNodeWithText("2 / 3").assertExists()
   compose.onNodeWithText("Bookmarked").assertExists()
   compose.onNodeWithContentDescription("Home",useUnmergedTree=true).performClick()
@@ -79,11 +80,11 @@ class ReaderDeviceTest {
  }
  @Test fun nestedSafScanIsIdempotentAndPreservesOriginals() {
   val instrumentation=InstrumentationRegistry.getInstrumentation();val context=instrumentation.targetContext
-  instrumentation.uiAutomation.adoptShellPermissionIdentity("android.permission.MANAGE_DOCUMENTS")
+  instrumentation.uiAutomation.executeShellCommand("am broadcast --receiver-foreground -f 0x20 -n com.realreader.app.test/com.realreader.app.FixtureGrantReceiver").use {android.os.ParcelFileDescriptor.AutoCloseInputStream(it).readBytes()}
   val tree=android.provider.DocumentsContract.buildTreeDocumentUri("com.realreader.fixture.documents","root")
   val store=LibraryStore(context);val oldFolders=store.folders();store.prefs.edit().putStringSet("folders",setOf(tree.toString())).commit()
-  try {store.scan();store.scan();val found=store.db.all().filter{it.name=="Test #1.cbz"};assertEquals(1,found.size);assertTrue(androidx.documentfile.provider.DocumentFile.fromSingleUri(context,Uri.parse(found.first().uri))!!.exists());assertTrue(found.first().uri.startsWith("content://"));assertEquals("Test",found.first().series);store.db.remove(found.first().id)}
-  finally {store.prefs.edit().putStringSet("folders",oldFolders).commit();store.db.close();instrumentation.uiAutomation.dropShellPermissionIdentity()}
+  try {val first=store.scan();val second=store.scan();val found=store.db.all().filter{it.name=="Test #1.cbz"};assertEquals("$first / $second",1,found.size);assertTrue(androidx.documentfile.provider.DocumentFile.fromSingleUri(context,Uri.parse(found.first().uri))!!.exists());assertTrue(found.first().uri.startsWith("content://"));assertEquals("Test",found.first().series);store.db.remove(found.first().id)}
+  finally {store.prefs.edit().putStringSet("folders",oldFolders).commit();store.db.close()}
  }
  @Test fun pdfUsesNativeRenderer() {
   val context=ApplicationProvider.getApplicationContext<Context>();val file=File(context.cacheDir,"Fixture.pdf")
