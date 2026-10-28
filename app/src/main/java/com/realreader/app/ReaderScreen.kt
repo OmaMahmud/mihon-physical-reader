@@ -28,6 +28,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import kotlin.math.min
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable fun ReaderScreen(comic: Comic,store: LibraryStore,onBack:()->Unit,onHome:()->Unit,onNext:(Long)->Unit) {
     val context=LocalContext.current
     val activity=context as MainActivity
@@ -69,7 +70,7 @@ import kotlin.math.min
         val next=starts.getOrNull(pos+delta)
         if(next!=null){page=next;controls=false}else {controls=true;view.ready=true}
     }
-    view.onTurn={move(it)};view.onControls={controls=!controls;settings=false};view.rtl=rtl
+    view.bookMode=double;view.onTurn={move(it)};view.onControls={controls=!controls;settings=false};view.rtl=rtl
     LaunchedEffect(document,page,double,rtl,starts) {
         val doc=document ?: return@LaunchedEffect
         loading=true;view.ready=false

@@ -18,6 +18,12 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
+      - name: Fetch licensed comic fixture for tests only
+        run: |
+          mkdir -p app/src/androidTest/assets/comic
+          for page in 1 2 3; do
+            curl --fail --location --retry 3 --max-time 90 "https://www.peppercarrot.com/0_sources/ep01_Potion-of-Flight/low-res/en_Pepper-and-Carrot_by-David-Revoy_E01P0${page}.jpg" -o "app/src/androidTest/assets/comic/page${page}.jpg"
+          done
       - name: Build, unit test and lint
         run: gradle testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest --stacktrace
       - uses: actions/upload-artifact@v4
@@ -37,7 +43,9 @@ jobs:
           target: google_apis
           profile: pixel_2
           disable-animations: true
-          script: gradle connectedDebugAndroidTest --stacktrace
+          script: |
+            gradle connectedDebugAndroidTest --stacktrace
+            adb pull /sdcard/Android/data/com.realreader.app/files/proof app/build/proof
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -45,3 +53,4 @@ jobs:
           path: |
             app/build/reports
             app/build/outputs/androidTest-results
+            app/build/proof

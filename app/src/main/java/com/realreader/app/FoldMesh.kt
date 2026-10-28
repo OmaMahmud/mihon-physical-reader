@@ -18,30 +18,34 @@ object FoldMesh {
         if(!safe(1.0)) { var lo=0.0; var hi=1.0; repeat(24) { val m=(lo+hi)*.5; if(safe(m))lo=m else hi=m }; tx=1+(rx-1)*lo; ty=gy+(ry-gy)*lo }
         val d=hypot(tx-1,ty-gy); val nx=if(d>1e-5)(tx-1)/d else -1.0; val ny=if(d>1e-5)(ty-gy)/d else 0.0
         val mx=(1+tx)*.5; val my=(gy+ty)*.5
-        data class P(val x: Double,val y: Double)
-        fun signed(p: P)=(p.x-mx)*nx+(p.y-my)*ny
-        val out=ArrayList<Float>(88*56*30)
-        fun triangle(a: P,b: P,c: P) {
-            val points=listOf(a,b,c); val clip=ArrayList<P>(4)
-            for(k in 0..2) { val p=points[k]; val q=points[(k+1)%3]; val s=signed(p); val r=signed(q)
-                val inside=if(folded)s<=0 else s>=0; val other=if(folded)r<=0 else r>=0
-                if(inside)clip.add(p)
-                if(inside!=other) { val f=s/(s-r); clip.add(P(p.x+(q.x-p.x)*f,p.y+(q.y-p.y)*f)) }
+        val out=FloatArray(88*56*2*6*5);var size=0
+        val px=DoubleArray(4);val py=DoubleArray(4)
+        val xs=DoubleArray(3);val ys=DoubleArray(3)
+        fun signed(x:Double,y:Double)=(x-mx)*nx+(y-my)*ny
+        val lift=.075*sin(PI*t);val lip=.042*sin(PI*t)
+        fun vertex(x0:Double,y0:Double) {
+            val s=signed(x0,y0);var x=x0;var y=y0;var z=.012
+            if(d>1e-5 && folded) {x-=2*s*nx;y-=2*s*ny;z+=lift*exp(-abs(s)/.16)}
+            if(d>1e-5)z+=lip*exp(-abs(s)/.025)
+            if(folded)z+=.003
+            out[size++]=x.toFloat();out[size++]=y.toFloat();out[size++]=z.toFloat();out[size++]=x0.toFloat();out[size++]=1-y0.toFloat()
+        }
+        fun triangle(ax:Double,ay:Double,bx:Double,by:Double,cx:Double,cy:Double) {
+            xs[0]=ax;xs[1]=bx;xs[2]=cx;ys[0]=ay;ys[1]=by;ys[2]=cy
+            var count=0
+            for(k in 0..2) {
+                val n=(k+1)%3;val s=signed(xs[k],ys[k]);val r=signed(xs[n],ys[n])
+                val inside=if(folded)s<=0 else s>=0;val other=if(folded)r<=0 else r>=0
+                if(inside){px[count]=xs[k];py[count++]=ys[k]}
+                if(inside!=other){val f=s/(s-r);px[count]=xs[k]+(xs[n]-xs[k])*f;py[count++]=ys[k]+(ys[n]-ys[k])*f}
             }
-            fun vertex(p: P) {
-                val s=signed(p); var x=p.x; var y=p.y; var z=.012
-                if(d>1e-5 && folded) { x-=2*s*nx; y-=2*s*ny; z+=.075*sin(PI*t)*exp(-abs(s)/.16) }
-                if(d>1e-5) z+=.042*sin(PI*t)*exp(-abs(s)/.025)
-                if(folded)z+=.003
-                out.add(x.toFloat());out.add(y.toFloat());out.add(z.toFloat());out.add(p.x.toFloat());out.add(1-p.y.toFloat())
-            }
-            for(k in 1 until clip.size-1) { vertex(clip[0]);vertex(clip[k]);vertex(clip[k+1]) }
+            for(k in 1 until count-1){vertex(px[0],py[0]);vertex(px[k],py[k]);vertex(px[k+1],py[k+1])}
         }
         for(i in 0 until 88)for(j in 0 until 56) {
-            val a=P(i/88.0,j/56.0);val b=P((i+1)/88.0,j/56.0);val c=P(i/88.0,(j+1)/56.0);val d2=P((i+1)/88.0,(j+1)/56.0)
-            triangle(a,b,c);triangle(c,b,d2)
+            val x=i/88.0;val y=j/56.0;val xx=(i+1)/88.0;val yy=(j+1)/56.0
+            triangle(x,y,xx,y,x,yy);triangle(x,yy,xx,y,xx,yy)
         }
-        return out.toFloatArray()
+        return out.copyOf(size)
     }
 }
 object ReadingRules {

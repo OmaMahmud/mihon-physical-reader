@@ -20,6 +20,8 @@ import kotlin.math.*
 class PhysicalReader(context: Context): GLSurfaceView(context) {
     var onTurn: (Int)->Unit = {}; var onControls: ()->Unit = {}
     var rtl=false
+    var bookMode=false
+        set(value) {field=value;paper.book=value;requestRender()}
     var ready=false
     private val paper=PaperRenderer()
     private var zoom=1f; private var panX=0f; private var panY=0f
@@ -91,12 +93,14 @@ private class PaperRenderer: GLSurfaceView.Renderer {
     @Volatile var progress=0f;@Volatile var grab=.5f;@Volatile var move=.5f
     @Volatile var backward=false;@Volatile var target=1
     @Volatile var zoom=1f;@Volatile var panX=0f;@Volatile var panY=0f
+    @Volatile var book=false
     private var program=0;private var screenRatio=1f;private var ratio=1f
     private val textures=IntArray(3);private var hasNext=false;private var hasPrev=false
     private var source: Array<Bitmap?> = arrayOfNulls(3)
+    private var buffer=ByteBuffer.allocateDirect(88*56*2*6*5*4).order(ByteOrder.nativeOrder()).asFloatBuffer()
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
-        val vs="""attribute vec3 aPosition;attribute vec2 aUv;varying vec2 vUv;varying float vZ;uniform vec4 uRect;uniform vec3 uZoom;uniform float uMirror;
-        void main(){float x=mix(aPosition.x,1.0-aPosition.x,uMirror);vec2 p=vec2((x*2.0-1.0)*uRect.x,(aPosition.y*2.0-1.0)*uRect.y);gl_Position=vec4(p*uZoom.x+uZoom.yz,-aPosition.z,1.0);vUv=vec2(mix(aUv.x,1.0-aUv.x,uMirror),aUv.y);vZ=aPosition.z;}"""
+        val vs="""attribute vec3 aPosition;attribute vec2 aUv;varying vec2 vUv;varying float vZ;uniform vec4 uRect;uniform vec3 uZoom;uniform float uMirror;uniform vec2 uLeaf;uniform vec2 uUv;
+        void main(){float x=mix(aPosition.x,1.0-aPosition.x,uMirror);x=uLeaf.x+x*uLeaf.y;vec2 p=vec2((x*2.0-1.0)*uRect.x,(aPosition.y*2.0-1.0)*uRect.y);gl_Position=vec4(p*uZoom.x+uZoom.yz,-aPosition.z,1.0);vUv=vec2(uUv.x+mix(aUv.x,1.0-aUv.x,uMirror)*uUv.y,aUv.y);vZ=aPosition.z;}"""
         val fs="""precision mediump float;varying vec2 vUv;varying float vZ;uniform sampler2D uTexture;uniform float uBack;
         void main(){vec4 c=texture2D(uTexture,vUv);float shade=1.0-min(.32,vZ*2.5);vec3 paper=mix(c.rgb,vec3(.88,.87,.83),.86);gl_FragColor=vec4(mix(c.rgb,paper,uBack)*shade,1.0);}"""
         fun shader(type:Int,s:String):Int { val id=glCreateShader(type);glShaderSource(id,s);glCompileShader(id); val status=IntArray(1);glGetShaderiv(id,GL_COMPILE_STATUS,status,0);check(status[0]!=0){glGetShaderInfoLog(id)};return id }
@@ -111,26 +115,40 @@ private class PaperRenderer: GLSurfaceView.Renderer {
         source.forEachIndexed { i,b -> if(b!=null)upload(i,b) };old.filterNotNull().filter { it !in source }.forEach {it.recycle()}
     }
     private fun flat(z:Float=0f)=floatArrayOf(0f,0f,z,0f,1f,1f,0f,z,1f,1f,0f,1f,z,0f,0f,0f,1f,z,0f,0f,1f,0f,z,1f,1f,1f,1f,z,1f,0f)
-    private fun draw(data:FloatArray,texture:Int,back:Float=0f,mirror:Float=0f) {
+    private fun draw(data:FloatArray,texture:Int,back:Float=0f,mirror:Float=0f,leafBase:Float=0f,leafScale:Float=1f,uvBase:Float=0f,uvScale:Float=1f) {
         if(data.isEmpty())return
-        val buffer=ByteBuffer.allocateDirect(data.size*4).order(ByteOrder.nativeOrder()).asFloatBuffer().put(data);buffer.position(0)
+        buffer.clear();buffer.put(data);buffer.position(0)
         val pos=glGetAttribLocation(program,"aPosition");val uv=glGetAttribLocation(program,"aUv")
         glEnableVertexAttribArray(pos);glEnableVertexAttribArray(uv);glVertexAttribPointer(pos,3,GL_FLOAT,false,20,buffer);buffer.position(3);glVertexAttribPointer(uv,2,GL_FLOAT,false,20,buffer)
-        glUniform1f(glGetUniformLocation(program,"uBack"),back);glUniform1f(glGetUniformLocation(program,"uMirror"),mirror);glBindTexture(GL_TEXTURE_2D,textures[texture]);glDrawArrays(GL_TRIANGLES,0,data.size/5)
+        glUniform2f(glGetUniformLocation(program,"uLeaf"),leafBase,leafScale);glUniform2f(glGetUniformLocation(program,"uUv"),uvBase,uvScale);glUniform1f(glGetUniformLocation(program,"uBack"),back);glUniform1f(glGetUniformLocation(program,"uMirror"),mirror);glBindTexture(GL_TEXTURE_2D,textures[texture]);glDrawArrays(GL_TRIANGLES,0,data.size/5)
     }
     override fun onDrawFrame(gl:GL10?) {
         glClear(GL_COLOR_BUFFER_BIT or GL_DEPTH_BUFFER_BIT);if(source[0]==null)return
         glUseProgram(program)
-        val x=if(ratio>screenRatio)1f else ratio/screenRatio;val y=if(ratio>screenRatio)screenRatio/ratio else 1f
+        val fitRatio=if(book && ratio<1.25f)ratio*2 else ratio
+        val x=if(fitRatio>screenRatio)1f else fitRatio/screenRatio;val y=if(fitRatio>screenRatio)screenRatio/fitRatio else 1f
         glUniform4f(glGetUniformLocation(program,"uRect"),x,y,0f,0f);glUniform3f(glGetUniformLocation(program,"uZoom"),zoom,panX,panY)
         val valid=if(target>0)hasNext else hasPrev
-        if(progress<=0 || !valid) {draw(flat(),0);return}
+        val solo=book && ratio<1.25f
+        if(progress<=0 || !valid) {draw(flat(),0,leafBase=if(solo).5f else 0f,leafScale=if(solo).5f else 1f);return}
         val incoming=if(target>0)1 else 2
-        draw(flat(-.01f),incoming)
         val mirror=if(backward)1f else 0f
-        // Reflection is clipped at the crease; reverse paper never duplicates the incoming page.
-        draw(FoldMesh.create(progress,grab,move,false),0,0f,mirror)
-        draw(FoldMesh.create(progress,grab,move,true),0,1f,mirror)
+        if(book) {
+            val incomingSolo=source[incoming]!!.width.toFloat()/source[incoming]!!.height<1.25f
+            draw(flat(-.02f),incoming,leafBase=if(incomingSolo).5f else 0f,leafScale=if(incomingSolo).5f else 1f)
+            // Keep the opposite leaf stationary. Only the outside leaf rotates about the spine.
+            if(!solo)draw(flat(-.005f),0,leafBase=if(backward).5f else 0f,leafScale=.5f,uvBase=if(backward).5f else 0f,uvScale=.5f)
+            val leafBase=if(backward)0f else .5f
+            val frontBase=if(solo)0f else leafBase
+            val frontScale=if(solo)1f else .5f
+            draw(FoldMesh.create(progress,grab,move,false),0,0f,mirror,leafBase,.5f,frontBase,frontScale)
+            // Verso belongs to the next physical leaf, correctly reversed along the fold.
+            draw(FoldMesh.create(progress,grab,move,true),incoming,0f,mirror,leafBase,.5f,if(incomingSolo)1f else if(backward)1f else .5f,if(incomingSolo)-1f else -.5f)
+        } else {
+            draw(flat(-.01f),incoming)
+            draw(FoldMesh.create(progress,grab,move,false),0,0f,mirror)
+            draw(FoldMesh.create(progress,grab,move,true),incoming,1f,mirror)
+        }
     }
     fun release() {glDeleteTextures(3,textures,0);source.filterNotNull().forEach {it.recycle()};source=arrayOfNulls(3);glDeleteProgram(program)}
 }
