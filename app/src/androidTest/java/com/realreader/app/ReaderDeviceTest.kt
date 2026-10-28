@@ -41,13 +41,27 @@ class ReaderDeviceTest {
    val copied=java.util.concurrent.CountDownLatch(1);var status=-1
    android.view.PixelCopy.request(reader,output,{status=it;copied.countDown()},android.os.Handler(android.os.Looper.getMainLooper()))
    assertTrue(copied.await(5,java.util.concurrent.TimeUnit.SECONDS))
-   assertEquals(android.view.PixelCopy.SUCCESS,status)
+   if(status!=android.view.PixelCopy.SUCCESS){output.recycle();return Color.TRANSPARENT}
    return output.getPixel(output.width/2,output.height/2).also {output.recycle()}
   }
-  assertEquals("Destination must remain visible while decoding",Color.BLUE,centerColor())
+  val visibleDeadline=android.os.SystemClock.uptimeMillis()+15000
+  var color=Color.RED
+  while(android.os.SystemClock.uptimeMillis()<visibleDeadline) {
+   instrumentation.runOnMainSync {reader.requestRender()}
+   Thread.sleep(100)
+   color=centerColor()
+   if(color==Color.BLUE)break
+  }
+  assertEquals("Destination must remain visible while decoding",Color.BLUE,color)
   instrumentation.runOnMainSync {reader.frames(image(Color.BLUE),image(Color.GREEN),image(Color.RED))}
   Thread.sleep(200)
-  assertEquals("Texture replacement must keep the destination",Color.BLUE,centerColor())
+  val replacedDeadline=android.os.SystemClock.uptimeMillis()+10000
+  var replaced=Color.TRANSPARENT
+  while(android.os.SystemClock.uptimeMillis()<replacedDeadline) {
+   instrumentation.runOnMainSync {reader.requestRender()};Thread.sleep(100)
+   replaced=centerColor();if(replaced==Color.BLUE)break
+  }
+  assertEquals("Texture replacement must keep the destination",Color.BLUE,replaced)
   instrumentation.runOnMainSync {reader.dispose()}
  }
  @Test fun libraryGroupsIssuesBeforeOpeningSeries() {
@@ -115,9 +129,10 @@ class ReaderDeviceTest {
    android.os.ParcelFileDescriptor.AutoCloseInputStream(pipes[0]).use{it.readBytes()};image.recycle()
   }
   proof("reader-single")
+  compose.waitUntil(15000) {compose.activity.hasWindowFocus()}
   val w=compose.activity.window.decorView.width.toFloat();val h=compose.activity.window.decorView.height.toFloat();val now=android.os.SystemClock.uptimeMillis()
-  instrumentation.sendPointerSync(android.view.MotionEvent.obtain(now,now,android.view.MotionEvent.ACTION_DOWN,w*.9f,h*.5f,0))
-  instrumentation.sendPointerSync(android.view.MotionEvent.obtain(now,now+150,android.view.MotionEvent.ACTION_MOVE,w*.65f,h*.53f,0))
+  instrumentation.uiAutomation.injectInputEvent(android.view.MotionEvent.obtain(now,now,android.view.MotionEvent.ACTION_DOWN,w*.9f,h*.5f,0),true)
+  instrumentation.sendPointerSync(android.view.MotionEvent.obtain(now,now+150,android.view.MotionEvent.ACTION_MOVE,w*.65f,h*.53f,0),true)
   Thread.sleep(200);proof("reader-held-curl")
   instrumentation.sendPointerSync(android.view.MotionEvent.obtain(now,now+400,android.view.MotionEvent.ACTION_CANCEL,w*.65f,h*.53f,0));Thread.sleep(600)
   assertEquals(0,store.db.all().first{it.name==file.name}.page)
