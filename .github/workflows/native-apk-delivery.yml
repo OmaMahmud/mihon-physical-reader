@@ -1,0 +1,80 @@
+name: Package verified native update
+on:
+  push:
+    branches: [native-apk-delivery]
+    paths:
+      - .github/native-apk-signing.json
+permissions:
+  contents: read
+  actions: read
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require successful source verification
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run=$(jq -r .sourceRunId .github/native-apk-signing.json)
+          head=$(jq -r .sourceHeadSha .github/native-apk-signing.json)
+          gh run watch "$run" --exit-status --interval 20
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run" > source-run.json
+          jq -e --arg head "$head" '.conclusion == "success" and .head_sha == $head and .path == ".github/workflows/native-physical-v40.yml"' source-run.json
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "signed=$(jq 'has("signatureBase64")' .github/native-apk-signing.json)" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v4
+        with:
+          name: mihon-native-v40-apk
+          path: input
+          run-id: ${{ steps.source.outputs.run }}
+          github-token: ${{ github.token }}
+      - name: Request or attach offline signature
+        run: |
+          set -euo pipefail
+          apk=$(find input -name '*.apk' -type f | head -n1)
+          test -n "$apk"
+          signer=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -n1)
+          "$signer" verify "$apk"
+          python3 .github/scripts/apk-offline-signing.py request "$apk" signing-request.json
+          if jq -e 'has("signatureBase64")' .github/native-apk-signing.json >/dev/null; then
+            mkdir -p output
+            python3 .github/scripts/apk-offline-signing.py finish "$apk" .github/native-apk-signing.json output/Mihon-Physical-v4.0.1.apk
+            "$signer" verify --verbose --print-certs output/Mihon-Physical-v4.0.1.apk | tee output/signature-verification.txt
+            grep -q 'certificate SHA-256 digest: 06cc1ec2c1281e4983a93650e39d6293b818cb7c7e8f438de7b48b77e281f5a5' output/signature-verification.txt
+            aapt=$(find "$ANDROID_HOME/build-tools" -name aapt2 | sort -V | tail -n1)
+            "$aapt" dump badging output/Mihon-Physical-v4.0.1.apk > output/package-verification.txt
+            grep -q "package: name='app.mihon.physicalreader.dev' versionCode='42'" output/package-verification.txt
+            (cd output && sha256sum Mihon-Physical-v4.0.1.apk > SHA256SUMS.txt)
+          fi
+      - uses: actions/download-artifact@v4
+        if: steps.source.outputs.signed == 'true'
+        with:
+          name: mihon-native-v40-apk
+          path: previous
+          run-id: 40697716559
+          github-token: ${{ github.token }}
+      - name: Enable emulator acceleration
+        if: steps.source.outputs.signed == 'true'
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Verify existing app updates with data retained
+        if: steps.source.outputs.signed == 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          profile: pixel_2
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+          script: bash .github/scripts/verify-native-update.sh
+      - uses: actions/upload-artifact@v4
+        if: steps.source.outputs.signed == 'true'
+        with:
+          name: Mihon-Physical-v4.0.1-APK
+          path: output
+          if-no-files-found: error
