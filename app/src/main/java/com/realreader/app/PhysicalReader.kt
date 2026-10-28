@@ -26,6 +26,7 @@ class PhysicalReader(context: Context): GLSurfaceView(context) {
     private val paper=PaperRenderer()
     private var zoom=1f; private var panX=0f; private var panY=0f
     private var startX=0f;private var startY=0f;private var lastX=0f;private var lastY=0f
+    private var velocity=0f;private var lastTime=0L
     private var originalPan=0f;private var dragging=false;private var pinched=false;private var turning=0
     private var animator: ValueAnimator?=null
     private val scale=ScaleGestureDetector(context,object: ScaleGestureDetector.SimpleOnScaleGestureListener() {
@@ -46,8 +47,11 @@ class PhysicalReader(context: Context): GLSurfaceView(context) {
     private fun animate(commit: Boolean) {
         val end=if(commit)1f else 0f
         animator=ValueAnimator.ofFloat(paper.progress,end).apply {
-            duration=(280*abs(end-paper.progress)).toLong().coerceAtLeast(100);interpolator=DecelerateInterpolator()
-            addUpdateListener { paper.progress=it.animatedValue as Float;requestRender() }
+            val distance=abs(end-paper.progress)
+            duration=(if(commit)250+240*distance else (170+410*distance).coerceIn(180f,520f)).toLong()
+            interpolator=android.animation.TimeInterpolator {it*it*(3-2*it)}
+            val initialMove=paper.move;val rest=paper.grab
+            addUpdateListener { paper.progress=it.animatedValue as Float;if(!commit)paper.move=initialMove+(rest-initialMove)*it.animatedFraction;requestRender() }
             addListener(object: android.animation.AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: android.animation.Animator) {
                     animator=null
@@ -62,21 +66,26 @@ class PhysicalReader(context: Context): GLSurfaceView(context) {
         scale.onTouchEvent(e);taps.onTouchEvent(e)
         if(animator!=null || !ready)return true
         when(e.actionMasked) {
-            MotionEvent.ACTION_DOWN -> { startX=e.x;lastX=e.x;startY=e.y;lastY=e.y;originalPan=panX;dragging=false }
+            MotionEvent.ACTION_DOWN -> { startX=e.x;lastX=e.x;startY=e.y;lastY=e.y;originalPan=panX;dragging=false;velocity=0f;lastTime=e.eventTime }
             MotionEvent.ACTION_POINTER_DOWN -> { pinched=true; if(dragging) {paper.progress=0f;dragging=false;requestRender()} }
             MotionEvent.ACTION_MOVE -> {
                 if(pinched || scale.isInProgress)return true
                 val dx=e.x-startX;val dy=e.y-startY
                 if(zoom<=1.01f && abs(dx)>16 && abs(dx)>abs(dy)*1.3f) {
                     if(!dragging) { dragging=true;turning=(if(dx<0)1 else -1)*(if(rtl)-1 else 1);paper.backward=dx>0;paper.target=turning;paper.grab=1-startY/height }
-                    paper.move=1-e.y/height;paper.progress=(abs(dx)/width).coerceIn(.001f,.99f);requestRender()
+                    val elapsed=max(1L,e.eventTime-lastTime)
+                    velocity=.65f*velocity+.35f*((e.x-lastX)/width/elapsed*1000)
+                    val travel=max(1f,1.5f*paper.fitX*width/(if(bookMode)2 else 1))
+                    paper.move=1-e.y/height;paper.progress=(abs(dx)/travel).coerceIn(.001f,.99f);requestRender()
                 } else if(zoom>1.01f) {panX+=e.x-lastX;panY+=e.y-lastY;clamp()}
-                lastX=e.x;lastY=e.y
+                lastX=e.x;lastY=e.y;lastTime=e.eventTime
             }
             MotionEvent.ACTION_UP -> {
                 val dx=e.x-startX;val dy=e.y-startY
                 if(pinched)return true
-                if(dragging) { animate(paper.progress>.22f);dragging=false }
+                if(dragging) { val flick=if(dx<0)-velocity else velocity
+                    val travel=abs(dx)/width
+                    animate(paper.progress>.27f || travel>.045f && flick>.36f || travel>.13f && paper.progress>.10f);dragging=false }
                 else if(zoom>1.01f && ReadingRules.edgeTurn(zoom,originalPan,horizontalBound(),dx,dy)) turn((if(dx<0)1 else -1)*(if(rtl)-1 else 1))
                 else if(hypot(dx,dy)<16) {
                     if(e.x/width in .3f.. .7f)onControls()

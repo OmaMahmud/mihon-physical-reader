@@ -52,8 +52,14 @@ class ReaderDeviceTest {
   compose.onNodeWithText("Start Reading").performClick()
   compose.waitUntil(30000) {store.db.all().first{it.name==file.name}.pages==3}
   Thread.sleep(500)
-  fun proof(name:String){val dir=File(context.getExternalFilesDir(null),"proof");dir.mkdirs();val image=instrumentation.uiAutomation.takeScreenshot();File(dir,"$name.png").outputStream().use{image.compress(Bitmap.CompressFormat.PNG,100,it)};image.recycle()}
+  fun proof(name:String){val dir=File(context.getExternalFilesDir(null),"proof");dir.mkdirs();val image=instrumentation.uiAutomation.takeScreenshot();val output=File(dir,"$name.png");output.outputStream().use{image.compress(Bitmap.CompressFormat.PNG,100,it)};image.recycle();instrumentation.uiAutomation.executeShellCommand("mkdir -p /sdcard/Download/real-reader-proof && cp ${output.absolutePath} /sdcard/Download/real-reader-proof/$name.png").use {android.os.ParcelFileDescriptor.AutoCloseInputStream(it).readBytes()}}
   proof("reader-single")
+  val w=compose.activity.window.decorView.width.toFloat();val h=compose.activity.window.decorView.height.toFloat();val now=android.os.SystemClock.uptimeMillis()
+  instrumentation.sendPointerSync(android.view.MotionEvent.obtain(now,now,android.view.MotionEvent.ACTION_DOWN,w*.9f,h*.5f,0))
+  instrumentation.sendPointerSync(android.view.MotionEvent.obtain(now,now+150,android.view.MotionEvent.ACTION_MOVE,w*.65f,h*.53f,0))
+  Thread.sleep(200);proof("reader-held-curl")
+  instrumentation.sendPointerSync(android.view.MotionEvent.obtain(now,now+400,android.view.MotionEvent.ACTION_CANCEL,w*.65f,h*.53f,0));Thread.sleep(600)
+  assertEquals(0,store.db.all().first{it.name==file.name}.page)
   compose.onRoot().performTouchInput {swipeLeft()}
   compose.waitUntil(30000) {store.db.all().first{it.name==file.name}.page==1}
   compose.onRoot().performTouchInput {click(center)}

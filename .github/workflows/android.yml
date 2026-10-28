@@ -45,7 +45,7 @@ jobs:
           disable-animations: true
           script: |
             gradle connectedDebugAndroidTest --stacktrace
-            adb pull /sdcard/Android/data/com.realreader.app/files/proof app/build/proof
+            adb pull /sdcard/Download/real-reader-proof app/build/proof
       - uses: actions/upload-artifact@v4
         if: always()
         with:
