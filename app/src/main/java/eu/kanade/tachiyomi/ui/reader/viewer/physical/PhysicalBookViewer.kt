@@ -176,6 +176,7 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
 
     private fun requestPage(index: Int, required: Boolean) {
         scope.launch {
+            if (!metadataReady) return@launch
             val chapter = chapters?.currChapter ?: return@launch
             val page = chapter.pages?.getOrNull(index) ?: return@launch
             if (required) {
@@ -209,12 +210,10 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
                                         check(bounds.outWidth > 0 && bounds.outHeight > 0) { "Unsupported image" }
                                         val options = BitmapFactory.Options().apply {
                                             inPreferredConfig = Bitmap.Config.ARGB_8888
-                                            while (max(bounds.outWidth, bounds.outHeight) /
-                                                inSampleSize.coerceAtLeast(1) >
-                                                decodeLimit
-                                            ) {
-                                                inSampleSize = inSampleSize.coerceAtLeast(1) * 2
-                                            }
+                                            val edge = max(bounds.outWidth, bounds.outHeight)
+                                            var sample = 1
+                                            while ((edge + sample - 1) / sample > decodeLimit) sample *= 2
+                                            inSampleSize = sample
                                         }
                                         val bitmap = stream().use { BitmapFactory.decodeStream(it, null, options) }
                                         Triple(checkNotNull(bitmap), bounds.outWidth, bounds.outHeight)
@@ -257,7 +256,9 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
 
     override fun moveToPage(page: ReaderPage) {
         if (page.chapter !== chapters?.currChapter) return
-        surface?.command { seek(page.index) }
+        selectedIndex = page.index
+        chapters?.currChapter?.requestedPage = page.index
+        if (metadataReady) surface?.command { seek(page.index) }
     }
     override fun moveForward() {
         surface?.command { flip(1) }
@@ -285,6 +286,7 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
             requestPage = { index, required -> requestPage(index, required) },
             selected = { index ->
                 scope.launch {
+                    if (!metadataReady) return@launch
                     selectedIndex = index
                     focusIndex = index
                     loading = false
@@ -344,6 +346,7 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
             requestRender()
         }
         override fun onTouchEvent(event: MotionEvent): Boolean {
+            if (!metadataReady) return true
             scale.onTouchEvent(event)
             gesture.onTouchEvent(event)
             if (event.pointerCount > 1) scaling = true

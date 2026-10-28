@@ -124,6 +124,7 @@ internal class PhysicalBookRenderer(
     private var moveY = 0.5
     private var direction = 1
     private var drag = false
+    private var boundaryDrag = false
     private var spreadTurn = false
     private var spreadLastX = 0.0
     private var edgePull = 0.0
@@ -384,9 +385,11 @@ internal class PhysicalBookRenderer(
         lastTime = SystemClock.uptimeMillis()
         velocity = 0.0
         direction = if (x < 0.5) -1 else 1
+        boundaryDrag = false
         if (zoom > 1.001) return
-        if (!canTurn(direction)) return
-        if (!readyToTurn(direction)) return
+        val wide = !book && faces.getOrNull(index)?.wide == true
+        if (!wide && !canTurn(direction)) { boundaryDrag = true; return }
+        if (!wide && !readyToTurn(direction)) return
         drag = true
         spreadTurn = false
         spreadLastX = x
@@ -422,13 +425,13 @@ internal class PhysicalBookRenderer(
             } else {
                 0
             }
-            if (edge != 0 && canTurn(edge)) {
+            if (edge != 0) {
                 if (edgeDirection != edge) {
                     edgeDirection = edge
                     edgePull = 0.0
                 }
                 edgePull += abs(dx)
-                if (edgePull > 0.055) {
+                if (edgePull > 0.055 && canTurn(edge) && readyToTurn(edge)) {
                     direction = edge
                     grabY = 1 - y
                     moveY = grabY
@@ -448,13 +451,24 @@ internal class PhysicalBookRenderer(
     }
 
     fun up(rawX: Double, cancel: Boolean, tapped: Boolean) {
-        if (!drag) return
+        if (!drag) {
+            if (boundaryDrag && !tapped && !cancel && zoom <= 1.001) {
+                val x = if (reversed) 1 - rawX else rawX
+                val travel = startX - x
+                if (kotlin.math.abs(travel) > 0.13) boundary(travel > 0)
+            }
+            boundaryDrag = false
+            return
+        }
         drag = false
         if (tapped || cancel) {
             animate(0.0)
             return
         }
-        if (!book && faces.getOrNull(index)?.wide == true && !spreadTurn) return
+        if (!book && faces.getOrNull(index)?.wide == true && !spreadTurn) {
+            if (edgePull > 0.13 && edgeDirection != 0 && !canTurn(edgeDirection)) boundary(edgeDirection == 1)
+            return
+        }
         val x = if (reversed) 1 - rawX else rawX
         val speed = if (direction == 1) -velocity else velocity
         val travel = abs(x - startX)

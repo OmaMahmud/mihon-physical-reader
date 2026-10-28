@@ -2,6 +2,8 @@ package eu.kanade.tachiyomi.ui.reader.viewer.physical
 
 import android.content.Context
 import android.content.pm.ActivityInfo
+import android.util.Log
+import android.os.ParcelFileDescriptor
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
@@ -74,13 +76,15 @@ class NativePhysicalReaderTest {
         val bytes = output.toByteArray()
         val server = ServerSocket(0)
         val requests = AtomicInteger(0)
+        val failing = AtomicBoolean(true)
         val worker = thread(isDaemon = true) {
             try {
                 while (!server.isClosed) {
                     server.accept().use { socket ->
                         val reader = socket.getInputStream().bufferedReader()
                         while (reader.readLine()?.isNotEmpty() == true) { }
-                        val fail = requests.incrementAndGet() == 1
+                        requests.incrementAndGet()
+                        val fail = failing.get()
                         val body = if (fail) byteArrayOf() else bytes
                         val status = if (fail) "500 Test retry" else "200 OK"
                         val headers = "HTTP/1.1 $status\r\nContent-Type: image/png\r\nContent-Length: "+
@@ -90,7 +94,7 @@ class NativePhysicalReaderTest {
                         socket.getOutputStream().flush()
                     }
                 }
-            } catch (_: Exception) { }
+            } catch (e: Exception) { Log.i("NativePhysicalTest", "Test server stopped: $e") }
         }
         val source = object : HttpSource() {
             override val name = "Native physical network test"
@@ -109,9 +113,14 @@ class NativePhysicalReaderTest {
                 chapter.state = ReaderChapter.State.Loaded(pages)
                 chapter.pageLoader = loader
                 val page = pages.single()
+                Log.i("NativePhysicalTest", "Await initial error: status=${page.status} requests=${requests.get()}")
                 withTimeout(30_000) { page.statusFlow.first { it is Page.State.Error } }
+                Log.i("NativePhysicalTest", "Observed initial error: ${page.status}; requests=${requests.get()}")
+                failing.set(false)
+                Log.i("NativePhysicalTest", "Retry network image")
                 loader.retryPage(page)
                 withTimeout(30_000) { page.statusFlow.first { it == Page.State.Ready } }
+                Log.i("NativePhysicalTest", "Network or cache image ready; requests=${requests.get()}")
                 assertNotNull(page.stream?.invoke()?.use { BitmapFactory.decodeStream(it) })
                 assertTrue(graph.chapterCache.isImageInCache(checkNotNull(page.imageUrl)))
                 server.close()
@@ -305,6 +314,12 @@ class NativePhysicalReaderTest {
             true,
         )
         File(proof, "$name.jpg").outputStream().use { small.compress(Bitmap.CompressFormat.JPEG, 88, it) }
+        val privateImage = File(proof, "$name.jpg")
+        val command = "mkdir -p /sdcard/Download/native-physical-proof; " +
+            "cp '" + privateImage.absolutePath + "' /sdcard/Download/native-physical-proof/$name.jpg"
+        ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand(command)).use {
+            it.readBytes()
+        }
         if (small !== screenshot) small.recycle()
         screenshot.recycle()
     }
@@ -345,7 +360,7 @@ class NativePhysicalReaderTest {
                     textSize = 80f
                     strokeWidth = 12f
                 }
-                canvas.drawText("CHAPTER PAGE ${index + 1}", 30f, 130f, paint)
+                canvas.drawText("${file.name} PAGE ${index + 1}", 30f, 130f, paint)
                 paint.color = Color.BLACK
                 for (x in 30 until bitmap.width step 180) {
                     canvas.drawLine(
