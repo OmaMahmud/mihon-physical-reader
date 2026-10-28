@@ -275,11 +275,18 @@ class NativePhysicalReaderTest {
             }
             SystemClock.sleep(500)
             capture("08-native-reopened-progress")
+            reopened.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE }
+            waitFor(reopened) { it.resources.configuration.screenWidthDp > it.resources.configuration.screenHeightDp }
+            SystemClock.sleep(600)
             reopened.onActivity { it.moveToPageIndex(7) }
             waitFor(reopened) { it.viewModel.state.value.currentPage == 8 }
             SystemClock.sleep(500)
             swipe(false)
-            swipe(false)
+            val stillInFirstChapter = AtomicBoolean(false)
+            reopened.onActivity {
+                stillInFirstChapter.set(it.viewModel.state.value.currentChapter?.chapter?.id == first.id)
+            }
+            if (stillInFirstChapter.get()) swipe(false)
             waitFor(reopened) {
                 it.viewModel.state.value.currentChapter?.chapter?.id != first.id &&
                     it.viewModel.state.value.currentPage == 1
