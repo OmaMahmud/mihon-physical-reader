@@ -37,8 +37,8 @@ android {
     defaultConfig {
         applicationId = "app.mihon.physicalreader"
 
-        versionCode = 41
-        versionName = "4.0-native-physical"
+        versionCode = 42
+        versionName = "4.0.1-native-physical"
 
         buildConfigField("boolean", "TELEMETRY_INCLUDED", "${Config.includeTelemetry}")
         buildConfigField("boolean", "UPDATER_ENABLED", "${Config.enableUpdater}")

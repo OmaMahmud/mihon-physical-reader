@@ -291,10 +291,10 @@ internal class PhysicalBookRenderer(
         faces = result
         val face = faces.indexOfFirst { it.source == keep }.coerceAtLeast(0)
         index = if (book) {
-            if (keep == 0) {
-                -1
-            } else if (preserveClosedEnd && faces.lastOrNull()?.source == keep) {
+            if (preserveClosedEnd && faces.lastOrNull()?.source == keep) {
                 faces.lastIndex
+            } else if (keep == 0) {
+                -1
             } else if (face % 2 == 1) {
                 face
             } else {
@@ -308,7 +308,7 @@ internal class PhysicalBookRenderer(
     private fun currentSource(): Int = faces.getOrNull(max(0, index))?.source?.takeIf { it >= 0 } ?: source
     private fun canTurn(dir: Int): Boolean = if (book) {
         if (dir == 1) {
-            if (index == -1) faces.size > 1 else index < faces.lastIndex
+            if (index == -1) faces.isNotEmpty() else index < faces.lastIndex
         } else {
             index != -1
         }
@@ -320,7 +320,14 @@ internal class PhysicalBookRenderer(
 
     private fun readyToTurn(dir: Int): Boolean {
         val wanted = if (book) {
-            if (dir == 1) listOf(index + 1, index + 2, index + 3) else listOf(index - 2, index - 1)
+            if (dir == 1) {
+                listOf(index + 1, index + 2, index + 3)
+            } else if (index == faces.lastIndex) {
+                val previous = PhysicalBookPagination.beforeClosedEnd(faces.lastIndex)
+                listOf(previous, previous + 1)
+            } else {
+                listOf(index - 2, index - 1)
+            }
         } else {
             listOf(index + dir)
         }
@@ -380,6 +387,20 @@ internal class PhysicalBookRenderer(
         grabY = 0.5
         moveY = 0.5
         animate(1.0)
+    }
+
+    fun tapClosedBook(rawX: Double, rawY: Double): Boolean {
+        val atEnd = index >= 0 && index == faces.lastIndex
+        if (!book || (!atEnd && index != -1)) return false
+        if (animationDuration > 0 || drag) return true
+        val screenX = panX + (rawX - 0.5) * viewSw / zoom
+        val x = if (reversed) -screenX else screenX
+        val y = panY + (0.5 - rawY) * viewSh / zoom
+        val left = if (atEnd) -1.0 else 0.0
+        if (x in left..left + 1 && y in -ph / 2.0..ph / 2.0) {
+            flip(if (atEnd) -1 else 1)
+        }
+        return true
     }
 
     fun down(rawX: Double, y: Double, eventTime: Long) {
@@ -532,9 +553,9 @@ internal class PhysicalBookRenderer(
                 if (animationTo == 1.0) {
                     index = if (book) {
                         if (direction == 1) {
-                            if (index == -1) 1 else min(faces.lastIndex, index + 2)
+                            PhysicalBookPagination.afterForward(index, faces.lastIndex)
                         } else if (index == faces.lastIndex) {
-                            faces.size - 3
+                            PhysicalBookPagination.beforeClosedEnd(faces.lastIndex)
                         } else if (index == 1) {
                             -1
                         } else {
@@ -761,7 +782,11 @@ internal class PhysicalBookRenderer(
     private fun drawBook() {
         val closed = book && (index == -1 || index == faces.lastIndex)
         if (closed && progress <= 0.001) {
-            page(if (index == faces.lastIndex) faces.lastIndex else 0, 0f, 1f)
+            if (index == faces.lastIndex) {
+                page(faces.lastIndex, -1f, 0f)
+            } else {
+                page(0, 0f, 1f)
+            }
             return
         }
         if (book && progress <= 0.001) {
@@ -781,27 +806,22 @@ internal class PhysicalBookRenderer(
             val frontIndex: Int
             val backIndex: Int
             if (direction == 1) {
+                val closing = PhysicalBookPagination.closesEnd(index, faces.lastIndex)
                 if (index == -1) {
-                    page(2, 0f, 1f)
+                    if (!closing) page(2, 0f, 1f)
                     frontIndex = 0
-                    backIndex = 1
+                    backIndex = min(1, faces.lastIndex)
                 } else {
                     page(index, -1f, 0f)
-                    page(
-                        if (index ==
-                            faces.size - 3
-                        ) {
-                            faces.lastIndex
-                        } else {
-                            index + 3
-                        },
-                        0f,
-                        1f,
-                    )
+                    if (!closing) page(index + 3, 0f, 1f)
                     frontIndex = index + 1
-                    backIndex =
-                        index + 2
+                    backIndex = min(index + 2, faces.lastIndex)
                 }
+            } else if (index == faces.lastIndex) {
+                val previous = PhysicalBookPagination.beforeClosedEnd(faces.lastIndex)
+                if (previous >= 0) page(previous, -1f, 0f)
+                frontIndex = faces.lastIndex
+                backIndex = previous + 1
             } else {
                 if (index == 1) {
                     page(2, 0f, 1f, -0.075f)

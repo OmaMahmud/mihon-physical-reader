@@ -360,7 +360,21 @@ class PhysicalBookViewer(private val activity: ReaderActivity, private val rever
                 override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
                     if (longPressed || scaling) return true
                     val x = e.x / width
-                    if (x in 0.35f..0.65f) activity.toggleMenu() else activity.onViewerTap(Offset(x, e.y / height))
+                    val position = Offset(x, e.y / height)
+                    if (x in 0.35f..0.65f) {
+                        activity.toggleMenu()
+                    } else if (width > height) {
+                        val token = generation
+                        command {
+                            if (token == generation && !tapClosedBook(x.toDouble(), position.y.toDouble())) {
+                                scope.launch {
+                                    if (token == generation) activity.onViewerTap(position)
+                                }
+                            }
+                        }
+                    } else {
+                        activity.onViewerTap(position)
+                    }
                     return true
                 }
                 override fun onLongPress(e: MotionEvent) {

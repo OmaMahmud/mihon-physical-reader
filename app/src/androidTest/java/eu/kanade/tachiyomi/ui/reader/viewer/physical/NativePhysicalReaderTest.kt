@@ -144,9 +144,11 @@ class NativePhysicalReaderTest {
         val folder = File(root, "local/Native Curl Proof").apply { mkdirs() }
         makeChapter(File(folder, "001.cbz"), 8)
         makeChapter(File(folder, "002.cbz"), 2)
+        makeChapter(File(folder, "003.cbz"), 4, false)
         graph.storagePreferences.baseStorageDirectory.set(root.toUri().toString())
         graph.basePreferences.shownOnboardingFlow.set(true)
-        graph.readerPreferences.defaultReadingMode.set(ReadingMode.LEFT_TO_RIGHT.flagValue)
+        graph.readerPreferences.defaultReadingMode.delete()
+        assertEquals(ReadingMode.LEFT_TO_RIGHT.flagValue, graph.readerPreferences.defaultReadingMode.get())
         graph.readerPreferences.defaultOrientationType.set(ReaderOrientation.FREE.flagValue)
         graph.readerPreferences.showNavigationOverlayNewUser.set(false)
         graph.readerPreferences.showNavigationOverlayOnStart.set(false)
@@ -172,13 +174,20 @@ class NativePhysicalReaderTest {
                         url = "Native Curl Proof/001.cbz",
                         name = "Chapter 1",
                         chapterNumber = 1.0,
-                        sourceOrder = 1,
+                        sourceOrder = 2,
                     ),
                     Chapter.create().copy(
                         mangaId = manga.id,
                         url = "Native Curl Proof/002.cbz",
                         name = "Chapter 2",
                         chapterNumber = 2.0,
+                        sourceOrder = 1,
+                    ),
+                    Chapter.create().copy(
+                        mangaId = manga.id,
+                        url = "Native Curl Proof/003.cbz",
+                        name = "Chapter 3",
+                        chapterNumber = 3.0,
                         sourceOrder = 0,
                     ),
                 ),
@@ -267,6 +276,12 @@ class NativePhysicalReaderTest {
             waitFor(scenario) { it.viewModel.state.value.currentPage == 2 }
             swipe(true)
             waitFor(scenario) { it.viewModel.state.value.currentPage == 1 }
+            verifyClosedBook(scenario, ReadingMode.LEFT_TO_RIGHT, 0, 1, false, "short-ltr")
+            verifyClosedBook(scenario, ReadingMode.RIGHT_TO_LEFT, 0, 1, false, "short-rtl")
+            scenario.onActivity { it.lifecycleScopeForTestLoadNext() }
+            waitFor(scenario) { it.viewModel.state.value.currentChapter?.chapter?.name == "Chapter 3" }
+            verifyClosedBook(scenario, ReadingMode.LEFT_TO_RIGHT, 1, 3, true, "spread-ltr")
+            verifyClosedBook(scenario, ReadingMode.RIGHT_TO_LEFT, 1, 3, true, "spread-rtl")
         }
         ActivityScenario.launch<ReaderActivity>(intent).use { reopened ->
             waitFor(reopened) {
@@ -278,6 +293,8 @@ class NativePhysicalReaderTest {
             reopened.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE }
             waitFor(reopened) { it.resources.configuration.screenWidthDp > it.resources.configuration.screenHeightDp }
             SystemClock.sleep(600)
+            verifyClosedBook(reopened, ReadingMode.LEFT_TO_RIGHT, 7, 7, true, "wide-ltr")
+            verifyClosedBook(reopened, ReadingMode.RIGHT_TO_LEFT, 7, 7, true, "wide-rtl")
             reopened.onActivity { it.moveToPageIndex(7) }
             waitFor(reopened) { it.viewModel.state.value.currentPage == 8 }
             SystemClock.sleep(500)
@@ -302,6 +319,84 @@ class NativePhysicalReaderTest {
                 graph.historyRepository.getHistoryByMangaId(manga.id)
             }.isNotEmpty(),
         )
+    }
+
+    private fun verifyClosedBook(
+        scenario: ActivityScenario<ReaderActivity>,
+        mode: ReadingMode,
+        start: Int,
+        end: Int,
+        spread: Boolean,
+        label: String,
+    ) {
+        scenario.onActivity {
+            it.viewModel.setMangaReadingMode(mode)
+            it.hideMenu()
+        }
+        waitFor(scenario) { it.viewModel.getMangaReadingMode() == mode.flagValue }
+        SystemClock.sleep(1000)
+        scenario.onActivity { it.moveToPageIndex(start) }
+        waitFor(scenario) { it.viewModel.state.value.currentPage == start + 1 }
+        SystemClock.sleep(600)
+        val ltr = mode == ReadingMode.LEFT_TO_RIGHT
+        waitForPaper(left = spread || !ltr, right = spread || ltr)
+        swipe(ltr)
+        SystemClock.sleep(400)
+        waitFor(scenario) { it.viewModel.state.value.currentPage == end + 1 }
+        waitForPaper(left = ltr, right = !ltr)
+        SystemClock.sleep(400)
+        waitForPaper(left = ltr, right = !ltr)
+        capture("10-closed-$label")
+        // A tap on the empty half must not reopen the comic or advance chapters.
+        device.click(device.displayWidth * (if (ltr) 3 else 1) / 4, device.displayHeight / 2)
+        SystemClock.sleep(500)
+        waitForPaper(left = ltr, right = !ltr)
+        device.click(device.displayWidth * (if (ltr) 1 else 3) / 4, device.displayHeight / 2)
+        SystemClock.sleep(1000)
+        waitForPaper(left = spread || !ltr, right = spread || ltr)
+        waitFor(scenario) { it.viewModel.state.value.currentPage == start + 1 }
+        capture("11-reopened-$label")
+        swipe(ltr)
+        SystemClock.sleep(400)
+        waitForPaper(left = ltr, right = !ltr)
+        scenario.moveToState(Lifecycle.State.CREATED)
+        scenario.moveToState(Lifecycle.State.RESUMED)
+        SystemClock.sleep(600)
+        waitForPaper(left = ltr, right = !ltr)
+        device.click(device.displayWidth * (if (ltr) 1 else 3) / 4, device.displayHeight / 2)
+        SystemClock.sleep(1000)
+        waitForPaper(left = spread || !ltr, right = spread || ltr)
+    }
+
+    private fun waitForPaper(left: Boolean, right: Boolean) {
+        val deadline = SystemClock.uptimeMillis() + 10_000
+        var actualLeft = 0.0
+        var actualRight = 0.0
+        while (SystemClock.uptimeMillis() < deadline) {
+            val bitmap = checkNotNull(instrumentation.uiAutomation.takeScreenshot())
+            fun occupied(from: Double, to: Double): Double {
+                var painted = 0
+                for (row in 0 until 24) {
+                    for (column in 0 until 24) {
+                        val x = ((from + (to - from) * (column + 0.5) / 24) * bitmap.width).toInt()
+                        val y = ((0.30 + 0.40 * (row + 0.5) / 24) * bitmap.height).toInt()
+                        val pixel = bitmap.getPixel(x, y)
+                        val difference = kotlin.math.abs(Color.red(pixel) - 19) +
+                            kotlin.math.abs(Color.green(pixel) - 20) + kotlin.math.abs(Color.blue(pixel) - 23)
+                        if (difference > 30) painted++
+                    }
+                }
+                return painted / 576.0
+            }
+            actualLeft = occupied(0.15, 0.40)
+            actualRight = occupied(0.60, 0.85)
+            bitmap.recycle()
+            fun matches(expected: Boolean, actual: Double) = if (expected) actual > 0.15 else actual < 0.02
+            if (matches(left, actualLeft) && matches(right, actualRight)) return
+            SystemClock.sleep(200)
+        }
+        capture("99-wrong-closed-side")
+        throw AssertionError("Paper sides expected $left/$right, occupied $actualLeft/$actualRight")
     }
 
     private fun ReaderActivity.lifecycleScopeForTestLoadNext() {
@@ -409,7 +504,7 @@ class NativePhysicalReaderTest {
         return result.get()
     }
 
-    private fun makeChapter(file: File, count: Int = 9) {
+    private fun makeChapter(file: File, count: Int = 9, widePages: Boolean = true) {
         ZipOutputStream(file.outputStream()).use { zip ->
             repeat(count) { index ->
                 if (index < 3) {
@@ -418,7 +513,7 @@ class NativePhysicalReaderTest {
                     zip.closeEntry()
                     return@repeat
                 }
-                val wide = index == 3 || index == 7
+                val wide = widePages && (index == 3 || index == 7)
                 val bitmap = Bitmap.createBitmap(
                     if (wide) 1600 else 720,
                     if (wide) 900 else 1080,
