@@ -134,7 +134,7 @@ class ReaderDeviceTest {
   instrumentation.uiAutomation.injectInputEvent(android.view.MotionEvent.obtain(now,now,android.view.MotionEvent.ACTION_DOWN,w*.9f,h*.5f,0),true)
   instrumentation.uiAutomation.injectInputEvent(android.view.MotionEvent.obtain(now,now+150,android.view.MotionEvent.ACTION_MOVE,w*.65f,h*.53f,0),true)
   Thread.sleep(200);proof("reader-held-curl")
-  instrumentation.uiAutomation.injectInputEvent(android.view.MotionEvent.obtain(now,now+400,android.view.MotionEvent.ACTION_CANCEL,w*.65f,h*.53f,0));Thread.sleep(600)
+  instrumentation.uiAutomation.injectInputEvent(android.view.MotionEvent.obtain(now,now+400,android.view.MotionEvent.ACTION_CANCEL,w*.65f,h*.53f,0),true);Thread.sleep(600)
   assertEquals(0,store.db.all().first{it.name==file.name}.page)
   compose.onRoot().performTouchInput {swipeLeft()}
   compose.waitUntil(30000) {store.db.all().first{it.name==file.name}.page==1}
