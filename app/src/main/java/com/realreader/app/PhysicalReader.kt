@@ -44,6 +44,7 @@ class PhysicalReader(context: Context): GLSurfaceView(context) {
             paper.setFrames(current,next,previous)
             // Reset only after the replacement textures are installed on the GL thread.
             paper.progress=0f
+            paper.completedTurn=false
             requestRender()
             post { ready=true }
         }
@@ -63,7 +64,7 @@ class PhysicalReader(context: Context): GLSurfaceView(context) {
             addListener(object: android.animation.AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: android.animation.Animator) {
                     animator=null
-                    if(commit) { ready=false; onTurn(turning); resetZoom() }
+                    if(commit) { ready=false; paper.completedTurn=true; onTurn(turning); resetZoom() }
                     if(!commit)paper.progress=0f
                     requestRender()
                 }
@@ -110,6 +111,7 @@ class PhysicalReader(context: Context): GLSurfaceView(context) {
     fun dispose() { animator?.cancel();queueEvent {paper.release()} }
 }
 private class PaperRenderer: GLSurfaceView.Renderer {
+    @Volatile var completedTurn=false
     @Volatile var progress=0f;@Volatile var grab=.5f;@Volatile var move=.5f
     @Volatile var backward=false;@Volatile var target=1
     @Volatile var zoom=1f;@Volatile var panX=0f;@Volatile var panY=0f
@@ -157,6 +159,12 @@ private class PaperRenderer: GLSurfaceView.Renderer {
         val frameGrab=grab;val frameMove=move
         val valid=if(target>0)hasNext else hasPrev
         val solo=book && ratio<1.25f
+        if(completedTurn && valid) {
+            val incoming=if(target>0)1 else 2
+            val incomingSolo=book && source[incoming]!!.width.toFloat()/source[incoming]!!.height<1.25f
+            draw(flat(),incoming,leafBase=if(incomingSolo && !rtl).5f else 0f,leafScale=if(incomingSolo).5f else 1f)
+            return
+        }
         if(frameProgress<=0 || !valid) {draw(flat(),0,leafBase=if(solo && !rtl).5f else 0f,leafScale=if(solo).5f else 1f);return}
         val incoming=if(target>0)1 else 2
         val mirror=if(backward)1f else 0f
