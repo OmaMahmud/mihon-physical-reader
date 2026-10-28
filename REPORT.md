@@ -43,8 +43,37 @@ The self-contained codebase is on `real-reader-independent` in the accessible `O
 
 ## Validation
 
-Final CI run, test counts, artifact checksums and verified outcomes are recorded in the delivered report after CI completes. Tests cover geometry/spine bounds, page ordering, zoom-edge rules, cover/wide-page pagination, real CBZ page decoding, persisted progress/bookmarks, corrupt archives, SAF recursive indexing, native PDF rendering and UI navigation. The actual-comic reader test uses Pepper&Carrot Episode 1 (David Revoy, CC BY 4.0), downloaded into test assets only.
+**Verified CI:** [Real Reader Android run 40768009986](https://github.com/OmaMahmud/mihon-physical-reader/actions/runs/40768009986), code commit `fa4da96fb69c7fdc76197dd9ba95d20f0d72f61b`. The final report update does not change app source.
+
+| Check | Result |
+| --- | --- |
+| Debug app and instrumentation APK assembly | Passed |
+| Unit tests | 4 passed; 0 failures, 0 skipped |
+| Android lint | 0 errors, 24 warnings |
+| Android 35 Pixel 2 emulator tests | 6 passed; 0 failures/errors/skips |
+| Visual evidence | Reader, held curl, Home/Continue Reading and settled Library captures retained and reviewed |
+| APK package inspection | Correct app ID/API levels; 37,328-byte Material Symbols font; no test comic assets/test provider; no Mihon namespace in DEX |
+| Internet access | No `INTERNET` permission; WorkManager contributes network-state/background-work permissions |
+| Artifact integrity | Downloaded ZIP SHA-256 matched GitHub's recorded artifact digest; APK signing block present; same CI build installed for emulator testing |
+
+The device tests exercise native navigation/Home/back, actual CBZ pages, a held/cancelled curl, forward turning, persisted bookmarks and resume, recursive SAF indexing with a scoped tree grant and duplicate suppression, native PDF rendering, and controlled corrupt-archive failure. Geometry/spine invariants, zoom-edge rules, natural page order and cover/wide-page pagination are unit tested. The real-comic fixture is Pepper&Carrot Episode 1 (David Revoy, CC BY 4.0), included only in instrumentation assets.
+
+A reader initialization race was fixed: rendering/progress updates now wait until the page-layout index is ready, preventing a resumed comic from being temporarily marked finished. Tests wait for the loaded reader UI. The SAF fixture now honors query projections and grants access from its owner process. System bars use light icons against the dark theme. The enlarged Continue Reading button was visually confirmed.
+
+Lint warnings remain: outdated target/dependency versions, window-size API recommendations, backup-rule configuration and Kotlin API style suggestions. They are not suppressed. Emulator animations are disabled; passing functional tests does not certify real-time animation quality, 60 FPS, physical-device performance, every storage provider or exact v4.0 parity.
+
+**Delivered APK:** `Real-Reader-0.1.0-debug.apk` — 10,261,942 bytes, version `0.1.0-alpha01`, application ID `com.realreader.app`.
+
+- APK SHA-256: `0acadcc6b1fa54bd151784443a927f6cb2aa0ee791f9493af209a0dcca946123`
+- GitHub artifact ZIP SHA-256: `168e94272ae17e3a2f3f805b8831aa7eefb3506679522e9384e494c6cb3744a4`
+- Minimum API: 26 (Android 8.0); target/compile API: 35 (Android 15).
+
+The evidence ZIP contains the original CI test reports, screenshots, package-inspection results and attribution. Test artwork is excluded from the installable app APK.
 
 ## Device acceptance checklist
 
 Install the APK, open Settings and choose supported formats (PDF off until explicitly enabled). Add a small folder or use + for individual files. Check your own CBZ/PDF, a wide scan, a nested folder and a renamed series. Open a comic, turn forward/back, cancel a short drag, show/hide controls, bookmark, seek, return Home and Continue Reading. Pinch to zoom, pan to each horizontal limit, and swipe again to turn. Rotate between single/double, test RTL and brightness/orientation, background/reopen and verify position. Confirm cover/spread behavior against the exact approved v4.0 prototype. Phone/tablet, SD-card providers, revoked grants, sustained memory pressure and prolonged reading remain device acceptance work.
+
+## Installing over an earlier test build
+
+The APK can install alongside Mihon because its package is separate. If an earlier Real Reader debug APK is already installed, a different temporary signing key may require uninstalling it first. That removes its local progress/index; there is no progress export yet. Keep original comic files, which the app does not delete.
