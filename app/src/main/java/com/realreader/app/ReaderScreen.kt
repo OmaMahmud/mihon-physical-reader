@@ -34,6 +34,7 @@ import kotlin.math.min
     val activity=context as MainActivity
     var document by remember(comic.id){mutableStateOf<ComicDocument?>(null)}
     var page by rememberSaveable(comic.id){mutableIntStateOf(comic.page)}
+    var scrub by remember(page){mutableFloatStateOf(page.toFloat())}
     var count by remember(comic.id){mutableIntStateOf(0)}
     var error by remember(comic.id){mutableStateOf<String?>(null)}
     var loading by remember {mutableStateOf(true)}
@@ -91,7 +92,7 @@ import kotlin.math.min
                 val a=make(page);var b:Bitmap?=null;var c:Bitmap?=null
                 try {b=starts.getOrNull(pos+1)?.let{make(it)};c=starts.getOrNull(pos-1)?.let{make(it)};Triple(a,b,c)}catch(e:Exception){a.recycle();b?.recycle();c?.recycle();throw e}
             }
-            view.frames(frames.first,frames.second,frames.third);store.db.position(comic.id,page,count);error=null
+            view.frames(frames.first,frames.second,frames.third);store.db.position(comic.id,page,count,starts.getOrNull(pos+1)==null);error=null
         } catch(e:Exception){error=e.message ?: "Page decoding failed";view.ready=false}
         loading=false
     }
@@ -120,7 +121,7 @@ import kotlin.math.min
                     Text("${page+1} / $count",Modifier.weight(1f))
                     Action("chevron_right","Next page"){view.turn(1)}
                 }
-                if(count>1)Slider(value=page.toFloat(),onValueChange={value ->page=starts.lastOrNull {it<=value.toInt()} ?: 0},valueRange=0f..(count-1).toFloat(),modifier=Modifier.fillMaxWidth())
+                if(count>1)Slider(value=scrub,onValueChange={scrub=it},onValueChangeFinished={page=starts.lastOrNull {it<=scrub.toInt()} ?: 0;view.resetZoom()},valueRange=0f..(count-1).toFloat(),modifier=Modifier.fillMaxWidth())
                 if(count>0 && (page==starts.lastOrNull())) {
                     val next=store.db.all().filter {it.series==comic.series && (it.issue>comic.issue || it.issue==comic.issue && it.name>comic.name)}.minWithOrNull(compareBy<Comic>{it.issue}.thenBy{it.name})
                     if(next!=null)Button(onClick={onNext(next.id)},modifier=Modifier.fillMaxWidth().heightIn(min=56.dp)){Text("Next issue: ${next.name}")}

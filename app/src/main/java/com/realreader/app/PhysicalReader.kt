@@ -33,14 +33,15 @@ class PhysicalReader(context: Context): GLSurfaceView(context) {
     })
     private val taps=GestureDetector(context,object: GestureDetector.SimpleOnGestureListener() {
         override fun onDown(e: MotionEvent)=true
-        override fun onDoubleTap(e: MotionEvent): Boolean { zoom=if(zoom>1)1f else 2f;panX=0f;panY=0f;clamp();return true }
+        override fun onDoubleTap(e: MotionEvent): Boolean { pinched=true;zoom=if(zoom>1)1f else 2f;panX=0f;panY=0f;clamp();return true }
     })
     init { setEGLContextClientVersion(2);setRenderer(paper);renderMode=RENDERMODE_WHEN_DIRTY;preserveEGLContextOnPause=true; contentDescription="Comic page. Pinch to zoom, drag to pan, swipe at an edge to turn; center tap for controls." }
     fun frames(current: Bitmap,next: Bitmap?,previous: Bitmap?) {
         ready=true;queueEvent { paper.setFrames(current,next,previous) };requestRender()
     }
     fun resetZoom() { zoom=1f;panX=0f;panY=0f;clamp() }
-    private fun clamp() { val bx=width*(zoom-1)/2;val by=height*(zoom-1)/2;panX=panX.coerceIn(-bx,bx);panY=panY.coerceIn(-by,by);paper.zoom=zoom;paper.panX=if(width>0)panX*2/width else 0f;paper.panY=if(height>0)-panY*2/height else 0f;requestRender() }
+    private fun horizontalBound()=max(0f,width*(paper.fitX*zoom-1)/2)
+    private fun clamp() { val bx=horizontalBound();val by=max(0f,height*(paper.fitY*zoom-1)/2);panX=panX.coerceIn(-bx,bx);panY=panY.coerceIn(-by,by);paper.zoom=zoom;paper.panX=if(width>0)panX*2/width else 0f;paper.panY=if(height>0)-panY*2/height else 0f;requestRender() }
     fun turn(logical: Int) { if(!ready || animator!=null)return; val physical=logical*(if(rtl)-1 else 1); turning=logical;paper.backward=physical<0;paper.target=logical;paper.grab=.5f;paper.move=.5f;animate(true) }
     private fun animate(commit: Boolean) {
         val end=if(commit)1f else 0f
@@ -57,10 +58,11 @@ class PhysicalReader(context: Context): GLSurfaceView(context) {
         }
     }
     override fun onTouchEvent(e: MotionEvent): Boolean {
+        if(e.actionMasked==MotionEvent.ACTION_DOWN)pinched=false
         scale.onTouchEvent(e);taps.onTouchEvent(e)
         if(animator!=null || !ready)return true
         when(e.actionMasked) {
-            MotionEvent.ACTION_DOWN -> { startX=e.x;lastX=e.x;startY=e.y;lastY=e.y;originalPan=panX;dragging=false;pinched=false }
+            MotionEvent.ACTION_DOWN -> { startX=e.x;lastX=e.x;startY=e.y;lastY=e.y;originalPan=panX;dragging=false }
             MotionEvent.ACTION_POINTER_DOWN -> { pinched=true; if(dragging) {paper.progress=0f;dragging=false;requestRender()} }
             MotionEvent.ACTION_MOVE -> {
                 if(pinched || scale.isInProgress)return true
@@ -75,7 +77,7 @@ class PhysicalReader(context: Context): GLSurfaceView(context) {
                 val dx=e.x-startX;val dy=e.y-startY
                 if(pinched)return true
                 if(dragging) { animate(paper.progress>.22f);dragging=false }
-                else if(zoom>1.01f && ReadingRules.edgeTurn(zoom,originalPan,width*(zoom-1)/2,dx,dy)) turn((if(dx<0)1 else -1)*(if(rtl)-1 else 1))
+                else if(zoom>1.01f && ReadingRules.edgeTurn(zoom,originalPan,horizontalBound(),dx,dy)) turn((if(dx<0)1 else -1)*(if(rtl)-1 else 1))
                 else if(hypot(dx,dy)<16) {
                     if(e.x/width in .3f.. .7f)onControls()
                     else if(zoom<=1.01f)turn((if(e.x>width*.7)1 else -1)*(if(rtl)-1 else 1))
@@ -93,6 +95,7 @@ private class PaperRenderer: GLSurfaceView.Renderer {
     @Volatile var progress=0f;@Volatile var grab=.5f;@Volatile var move=.5f
     @Volatile var backward=false;@Volatile var target=1
     @Volatile var zoom=1f;@Volatile var panX=0f;@Volatile var panY=0f
+    @Volatile var fitX=1f;@Volatile var fitY=1f
     @Volatile var book=false
     private var program=0;private var screenRatio=1f;private var ratio=1f
     private val textures=IntArray(3);private var hasNext=false;private var hasPrev=false
@@ -127,6 +130,7 @@ private class PaperRenderer: GLSurfaceView.Renderer {
         glUseProgram(program)
         val fitRatio=if(book && ratio<1.25f)ratio*2 else ratio
         val x=if(fitRatio>screenRatio)1f else fitRatio/screenRatio;val y=if(fitRatio>screenRatio)screenRatio/fitRatio else 1f
+        fitX=x;fitY=y
         glUniform4f(glGetUniformLocation(program,"uRect"),x,y,0f,0f);glUniform3f(glGetUniformLocation(program,"uZoom"),zoom,panX,panY)
         val valid=if(target>0)hasNext else hasPrev
         val solo=book && ratio<1.25f

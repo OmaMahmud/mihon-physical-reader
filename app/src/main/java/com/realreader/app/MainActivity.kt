@@ -3,6 +3,8 @@ package com.realreader.app
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import java.io.File
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
@@ -202,7 +204,10 @@ private fun Modifier.semanticsLabel(label: String): Modifier = this.then(Modifie
 @Composable private fun Cover(comic: Comic,modifier: Modifier) {
     val context=LocalContext.current
     var cover by remember(comic.uri){mutableStateOf<Bitmap?>(null)}
-    LaunchedEffect(comic.uri) {cover=withContext(Dispatchers.IO) {try {ComicDocument(context,comic).use {it.page(0,256)}}catch(_:Exception){null}}}
+    LaunchedEffect(comic.uri) {cover=withContext(Dispatchers.IO) {try {
+        val cached=File(context.cacheDir,"cover-${comic.uri.hashCode()}-${comic.added}.png")
+        if(cached.exists())BitmapFactory.decodeFile(cached.path) else ComicDocument(context,comic).use {doc->doc.page(0,256).also{b->cached.outputStream().use{b.compress(Bitmap.CompressFormat.PNG,100,it)}}}
+    }catch(_:Exception){null}}}
     Box(modifier.background(Brush.linearGradient(listOf(Color(0xFF294368),Panel)),RoundedCornerShape(12.dp)),contentAlignment=Alignment.Center) {
         if(cover!=null) Image(cover!!.asImageBitmap(),"Cover: ${comic.name}",Modifier.fillMaxSize()) else Text(symbolText("auto_stories"),fontFamily=symbols,fontSize=30.sp,color=Blue)
     }

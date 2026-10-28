@@ -71,6 +71,20 @@ class ReaderDeviceTest {
   proof("library")
   store.db.remove(store.db.all().first{it.name==file.name}.id);store.db.close();file.delete()
  }
+ @Test fun nestedSafScanIsIdempotentAndPreservesOriginals() {
+  val instrumentation=InstrumentationRegistry.getInstrumentation();val testContext=instrumentation.context;val context=instrumentation.targetContext
+  val root=File(testContext.filesDir,"saf-fixture");val nested=File(root,"nested").apply{mkdirs()};val file=File(nested,"Test #1.cbz").apply{writeText("fixture for index only")};File(nested,"unrelated.txt").writeText("ignored")
+  val tree=android.provider.DocumentsContract.buildTreeDocumentUri("com.realreader.fixture.documents","root")
+  val store=LibraryStore(context);val oldFolders=store.folders();store.prefs.edit().putStringSet("folders",setOf(tree.toString())).commit()
+  try {store.scan();store.scan();val found=store.db.all().filter{it.name==file.name};assertEquals(1,found.size);assertTrue(file.exists());assertTrue(found.first().uri.startsWith("content://"));assertEquals("Test",found.first().series);store.db.remove(found.first().id)}
+  finally {store.prefs.edit().putStringSet("folders",oldFolders).commit();store.db.close();root.deleteRecursively()}
+ }
+ @Test fun pdfUsesNativeRenderer() {
+  val context=ApplicationProvider.getApplicationContext<Context>();val file=File(context.cacheDir,"Fixture.pdf")
+  val pdf=android.graphics.pdf.PdfDocument();val p=pdf.startPage(android.graphics.pdf.PdfDocument.PageInfo.Builder(120,180,1).create());p.canvas.drawColor(Color.GREEN);pdf.finishPage(p);file.outputStream().use{pdf.writeTo(it)};pdf.close()
+  val c=Comic(0,Uri.fromFile(file).toString(),file.name,"PDF",0.0,0,0,0,0,"[]")
+  ComicDocument(context,c).use{doc->assertEquals(1,doc.count);val bitmap=doc.page(0,256);assertEquals(Color.GREEN,bitmap.getPixel(10,10));bitmap.recycle()};file.delete()
+ }
  @Test fun corruptArchiveProducesControlledError() {
   val context=ApplicationProvider.getApplicationContext<Context>();val file=File(context.cacheDir,"broken.cbz");file.writeText("bad archive")
   val c=Comic(0,Uri.fromFile(file).toString(),file.name,"Broken",0.0,0,0,0,0,"[]")

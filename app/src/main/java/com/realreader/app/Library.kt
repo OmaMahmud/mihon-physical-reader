@@ -20,8 +20,8 @@ import kotlin.math.max
 
 /** No network access: original files are retained at their SAF URI. */
 data class Comic(val id: Long, val uri: String, val name: String, val series: String, val issue: Double,
-    val pages: Int, val page: Int, val opened: Long, val added: Long, val marks: String) {
-    val finished get() = pages > 0 && page >= pages - 1
+    val pages: Int, val page: Int, val opened: Long, val added: Long, val marks: String, val completed: Boolean=false) {
+    val finished get() = completed || pages > 0 && page >= pages - 1
 }
 object ComicNames {
     private val number = Regex("^(.*?)[ #_-]+(\\d+(?:\\.\\d+)?)(?:[ _-].*)?$")
@@ -33,20 +33,20 @@ object ComicNames {
     fun image(n: String) = n.substringAfterLast('.').lowercase() in setOf("jpg", "jpeg", "png", "webp")
     fun natural(n: String): String = Regex("\\d+").replace(n.lowercase()) { it.value.padStart(12, '0') }
 }
-class LibraryDb(context: Context) : SQLiteOpenHelper(context, "real-reader.db", null, 1) {
+class LibraryDb(context: Context) : SQLiteOpenHelper(context, "real-reader.db", null, 2) {
     override fun onCreate(db: SQLiteDatabase) {
-        db.execSQL("CREATE TABLE comics(id INTEGER PRIMARY KEY,uri TEXT UNIQUE,name TEXT,series TEXT,issue REAL,pages INTEGER DEFAULT 0,page INTEGER DEFAULT 0,opened INTEGER DEFAULT 0,added INTEGER,marks TEXT DEFAULT '[]')")
+        db.execSQL("CREATE TABLE comics(id INTEGER PRIMARY KEY,uri TEXT UNIQUE,name TEXT,series TEXT,issue REAL,pages INTEGER DEFAULT 0,page INTEGER DEFAULT 0,opened INTEGER DEFAULT 0,added INTEGER,marks TEXT DEFAULT '[]',finished INTEGER DEFAULT 0)")
     }
-    override fun onUpgrade(db: SQLiteDatabase, old: Int, new: Int) = Unit
+    override fun onUpgrade(db: SQLiteDatabase, old: Int, new: Int) {if(old<2)db.execSQL("ALTER TABLE comics ADD COLUMN finished INTEGER DEFAULT 0")}
     @Synchronized fun all(): List<Comic> = readableDatabase.rawQuery("SELECT * FROM comics ORDER BY series COLLATE NOCASE,issue,name", null).use { c ->
-        buildList { while (c.moveToNext()) add(Comic(c.getLong(0),c.getString(1),c.getString(2),c.getString(3),c.getDouble(4),c.getInt(5),c.getInt(6),c.getLong(7),c.getLong(8),c.getString(9))) }
+        buildList { while (c.moveToNext()) add(Comic(c.getLong(0),c.getString(1),c.getString(2),c.getString(3),c.getDouble(4),c.getInt(5),c.getInt(6),c.getLong(7),c.getLong(8),c.getString(9),c.getInt(10)!=0)) }
     }
     @Synchronized fun add(uri: Uri, name: String) {
         val (series, issue) = ComicNames.parse(name)
         writableDatabase.execSQL("INSERT OR IGNORE INTO comics(uri,name,series,issue,added) VALUES(?,?,?,?,?)",arrayOf(uri.toString(),name,series,issue,System.currentTimeMillis()))
     }
-    @Synchronized fun position(id: Long, page: Int, count: Int) {
-        writableDatabase.execSQL("UPDATE comics SET page=?,pages=?,opened=? WHERE id=?",arrayOf(page.coerceIn(0,max(0,count-1)),count,System.currentTimeMillis(),id))
+    @Synchronized fun position(id: Long, page: Int, count: Int, done: Boolean=false) {
+        writableDatabase.execSQL("UPDATE comics SET page=?,pages=?,opened=?,finished=MAX(finished,?) WHERE id=?",arrayOf(page.coerceIn(0,max(0,count-1)),count,System.currentTimeMillis(),if(done)1 else 0,id))
     }
     @Synchronized fun marks(id: Long, marks: String) { writableDatabase.execSQL("UPDATE comics SET marks=? WHERE id=?",arrayOf(marks,id)) }
     @Synchronized fun renameSeries(id: Long, series: String) { writableDatabase.execSQL("UPDATE comics SET series=? WHERE id=?",arrayOf(series.trim(),id)) }
