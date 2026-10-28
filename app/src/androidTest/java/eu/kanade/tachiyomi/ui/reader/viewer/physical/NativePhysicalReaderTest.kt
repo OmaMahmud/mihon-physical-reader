@@ -254,7 +254,17 @@ class NativePhysicalReaderTest {
             scenario.onActivity { it.viewModel.setMangaReadingMode(ReadingMode.RIGHT_TO_LEFT) }
             waitFor(scenario) { it.viewModel.getMangaReadingMode() == ReadingMode.RIGHT_TO_LEFT.flagValue }
             SystemClock.sleep(1000)
-            swipe(false)
+            // Changing direction rebuilds the texture cache. A swipe during upload may be ignored.
+            // Retry only an unchanged source page; moving backward must fail the RTL assertion.
+            repeat(3) {
+                var current = 0
+                scenario.onActivity { current = it.viewModel.state.value.currentPage }
+                assertTrue("RTL forward must never move backward", current >= 4)
+                if (current == 4) {
+                    swipe(false)
+                    SystemClock.sleep(700)
+                }
+            }
             waitFor(scenario) { it.viewModel.state.value.currentPage > 4 }
             capture("06-native-right-to-left")
             assertFalse("No webpage after rotation", containsWebViewOnUi(scenario))
