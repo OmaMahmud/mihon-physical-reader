@@ -10,6 +10,7 @@ import android.opengl.GLSurfaceView
 import android.os.ParcelFileDescriptor
 import android.os.SystemClock
 import android.util.Log
+import android.view.InputDevice
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
@@ -348,10 +349,10 @@ class NativePhysicalReaderTest {
         waitForPaper(left = ltr, right = !ltr)
         capture("10-closed-$label")
         // A tap on the empty half must not reopen the comic or advance chapters.
-        tapBook(if (ltr) 0.75f else 0.25f)
+        tapBook(scenario, if (ltr) 0.75f else 0.25f)
         SystemClock.sleep(500)
         waitForPaper(left = ltr, right = !ltr)
-        tapBook(if (ltr) 0.25f else 0.75f)
+        tapBook(scenario, if (ltr) 0.25f else 0.75f)
         SystemClock.sleep(1000)
         waitForPaper(left = spread || !ltr, right = spread || ltr)
         waitFor(scenario) { it.viewModel.state.value.currentPage == start + 1 }
@@ -363,28 +364,26 @@ class NativePhysicalReaderTest {
         scenario.moveToState(Lifecycle.State.RESUMED)
         SystemClock.sleep(600)
         waitForPaper(left = ltr, right = !ltr)
-        tapBook(if (ltr) 0.25f else 0.75f)
+        tapBook(scenario, if (ltr) 0.25f else 0.75f)
         SystemClock.sleep(1000)
         waitForPaper(left = spread || !ltr, right = spread || ltr)
     }
 
-    private fun tapBook(fraction: Float) {
-        instrumentation.waitForIdleSync()
-        val time = SystemClock.uptimeMillis()
-        // Queue both halves of a short tap before waiting; an overloaded emulator must not hold DOWN.
-        listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP).forEachIndexed { index, action ->
-            val event = MotionEvent.obtain(
-                time,
-                time + index,
-                action,
-                device.displayWidth * fraction,
-                device.displayHeight / 2f,
-                0,
-            )
-            assertTrue(instrumentation.uiAutomation.injectInputEvent(event, false))
-            event.recycle()
+    private fun tapBook(scenario: ActivityScenario<ReaderActivity>, fraction: Float) {
+        // Dispatch a short touch through the complete reader view tree in one UI-thread turn.
+        // Host/emulator pauses between injected DOWN and UP must not turn it into a long press.
+        scenario.onActivity { activity ->
+            val root = activity.window.decorView
+            val x = root.width * fraction
+            val y = root.height / 2f
+            val time = SystemClock.uptimeMillis()
+            listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP).forEachIndexed { index, action ->
+                val event = MotionEvent.obtain(time, time + index, action, x, y, 0)
+                event.source = InputDevice.SOURCE_TOUCHSCREEN
+                assertTrue("Reader receives cover touch", root.dispatchTouchEvent(event))
+                event.recycle()
+            }
         }
-        instrumentation.waitForIdleSync()
     }
 
     private fun waitForPaper(left: Boolean, right: Boolean) {
